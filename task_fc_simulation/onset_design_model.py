@@ -17,7 +17,8 @@ class WCOnsetDesign:
                  exc_ext=0.75, K_gl=2.85, sigma_ou=5 * 1e-3):
 
         self.Dmat = D
-        self.BOLD = []
+        self.BOLD = None
+        self.t_BOLD = None
         self.rest_before = rest_before
         self.C_rest = C_rest
         self.wc = WCModel(Cmat=self.C_rest, Dmat=self.Dmat)
@@ -47,8 +48,9 @@ class WCOnsetDesign:
 
         self.append_outputs = append_outputs
         self.chunkwise = chunkwise
+        self.exc_rest = None
         self.bold = bold
-        self.bold_input = False
+        self.bold_input_ready = False
         self.TR = None
         self.last_duration = last_duration
         self.first_duration = first_duration
@@ -80,7 +82,8 @@ class WCOnsetDesign:
         self.wc.params['signalV'] = 10
 
     @classmethod
-    def from_matlab_structure(cls, mat_path, num_regions=30, delay=250,
+    def from_matlab_structure(cls, mat_path, num_regions=30, delay=250, append_outputs=False,
+                              bold=False, chunkwise=False,
                               rest_before=True, first_duration=12, last_duration=8,
                               exc_ext=0.75, K_gl=2.85, sigma_ou=5 * 1e-3):
         C_rest, C_task_dict = read_generate_task_matrices(mat_path, num_regions, num_modules=3,
@@ -91,7 +94,8 @@ class WCOnsetDesign:
 
         return cls(C_task_dict, C_rest, D, onset_time_list=onset_time_list,
                    task_name_list=task_names_list, duration_list=duration_list,
-                   rest_before=rest_before, first_duration=first_duration, last_duration=last_duration, append_outputs=True, bold=False, chunkwise=False,
+                   rest_before=rest_before, first_duration=first_duration, last_duration=last_duration,
+                   append_outputs=append_outputs, bold=bold, chunkwise=chunkwise,
                    exc_ext=exc_ext, K_gl=K_gl, sigma_ou=sigma_ou)
 
     def _generate_single_block(self, Cmat, duration=10):
@@ -115,7 +119,7 @@ class WCOnsetDesign:
             end_time_rest = self.onset_time_list[0]
         Cmat = self.C_rest
         self._generate_single_block(Cmat, duration=duration)
-        self.time_idxs_dict["Rest"].append([round(start_time_rest, 3), round(end_time_rest,3)])
+        self.time_idxs_dict["Rest"].append([round(start_time_rest, 3), round(end_time_rest, 3)])
 
     def _generate_last_rest(self):
         start_time_rest = self.onset_time_list[-1] + self.duration_list[-1]
@@ -126,8 +130,19 @@ class WCOnsetDesign:
         self._generate_single_block(Cmat, duration=duration)
         self.time_idxs_dict["Rest"].append([round(start_time_rest, 3), round(end_time_rest, 3)])
 
-    def generate_full_series(self):
-        self._generate_first_rest()
+    def generate_full_series(self, bold_chunkwise=False, TR=2):
+        self.bold_input_ready = True
+        if bold_chunkwise:
+            self.append_outputs = False
+            self.bold = False
+            self.chunkwise = False
+            self._generate_first_rest()
+            chunksize = TR * 1000 / self.wc.params["dt"]
+            assert self.wc['exc'].shape[1] >= chunksize, "First rest series should be longer than TR"
+            self.generate_first_bold_chunkwise(TR=TR)
+
+        else:
+            self._generate_first_rest()
         for i in range(len(self.onset_time_list)):
             task_name = self.task_name_list[i]
             Cmat = self.C_task_dict[task_name]
@@ -135,6 +150,8 @@ class WCOnsetDesign:
             duration = self.duration_list[i]
             start_time_block = onset_time
             self._generate_single_block(Cmat, duration=duration)
+            if bold_chunkwise:
+                self.generate_next_bold_chunkwise()
             end_time_block = onset_time + duration
             self.time_idxs_dict[task_name].append([round(start_time_block, 3), round(end_time_block, 3)])
             if i < len(self.onset_time_list) - 1:
@@ -144,24 +161,54 @@ class WCOnsetDesign:
                     start_time_rest = self.onset_time_list[i] + self.duration_list[i]
                     end_time_rest = self.onset_time_list[i + 1]
                     self._generate_single_block(Cmat, duration=duration)
+                    if bold_chunkwise:
+                        self.generate_next_bold_chunkwise()
                     self.time_idxs_dict["Rest"].append([round(start_time_rest, 3), round(end_time_rest, 3)])
             else:
                 self._generate_last_rest()
+                if bold_chunkwise:
+                    self.generate_next_bold_chunkwise()
             self.wc.inh = []
-            self.bold_input = True
+            self.wc.outputs = dotdict()
+            self.wc.state = dotdict()
 
     def generate_bold(self, TR=2, drop_first=12, clear_exc=True):
-        assert self.bold_input, "You need to generate neural activity first"
+        assert self.bold_input_ready, "You need to generate neural activity first"
         self.TR = TR
         bold_input = self.wc.boldInputTransform(self.wc['exc'])
-        boldModel = bold.BOLDModel(self.wc.params["N"], self.wc.params["dt"])
-        boldModel.samplingRate_NDt = int(round(TR*1000/boldModel.dt))
-        boldModel.run(bold_input, append=False)
-        self.BOLD = boldModel.BOLD[:, int(drop_first/TR):]
-        self.wc.outputs = dotdict({})
-        self.wc.state = dotdict({})
+        self.boldModel = bold.BOLDModel(self.wc.params["N"], self.wc.params["dt"])
+        self.boldModel.samplingRate_NDt = int(round(TR * 1000 / self.boldModel.dt))
+        self.boldModel.run(bold_input, append=False)
+        self.BOLD = self.boldModel.BOLD[:, int(drop_first / TR):]
         if clear_exc:
+            self.wc.outputs = dotdict({})
+            self.wc.state = dotdict({})
             self.wc.exc = []
 
+    def generate_first_bold_chunkwise(self, TR=2):
+        self.TR = TR
+        chunksize = TR * 1000 / self.wc.params["dt"]
+        used_last_idxs = int(self.wc['exc'].shape[1] - self.wc['exc'].shape[1] % chunksize)
+        bold_input = self.wc.boldInputTransform(self.wc['exc'])
+        bold_input = bold_input[:, :used_last_idxs]
+        self.exc_rest = self.wc['exc'][:, used_last_idxs:]
+        self.wc.boldModel = bold.BOLDModel(self.wc.params["N"], self.wc.params["dt"])
+        self.wc.boldModel.samplingRate_NDt = int(round(TR * 1000 / self.wc.boldModel.dt))
+        self.wc.boldModel.run(bold_input, append=False)
+        self.BOLD = self.wc.boldModel.BOLD
+        self.t_BOLD = self.wc.boldModel.t_BOLD
 
+    def generate_next_bold_chunkwise(self):
+        chunksize = self.TR * 1000 / self.wc.params["dt"]
+        new_exc = np.hstack((self.exc_rest, self.wc['exc']))
+        if new_exc.shape[1] > chunksize:
+            used_last_idxs = int(new_exc.shape[1] - new_exc.shape[1] % chunksize)
+            self.exc_rest = new_exc[:, used_last_idxs:]
+            bold_input = self.wc.boldInputTransform(new_exc[:, :used_last_idxs])
+            self.wc.boldModel.run(bold_input, append=True)
+            self.BOLD = self.wc.boldModel.BOLD
+            self.t_BOLD = self.wc.boldModel.t_BOLD
+        else:
+            self.exc_rest = new_exc
 
+    # toDO соединить в блок

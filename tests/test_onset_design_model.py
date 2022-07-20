@@ -54,7 +54,7 @@ class TestWCOnsetDesign:
         C_task_dict, C_rest, D = c_test
         wc_block = WCOnsetDesign(C_task_dict, C_rest, D,
                                  onset_time_list=[0.1], duration_list=2, task_name_list=["task_A"],
-                                 append_outputs=True, bold=False, chunkwise=False)
+                                 append_outputs=True, bold=True, chunkwise=True)
         wc_block._generate_first_rest()
         assert len(wc_block.onset_time_list) == 1
 
@@ -63,7 +63,15 @@ class TestWCOnsetDesign:
         wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=True,
                                  onset_time_list=[0.1], duration_list=2, task_name_list=["task_A"],
                                  append_outputs=True, last_duration=8, bold=False, chunkwise=False)
-        wc_block.generate_full_series()
+        wc_block.generate_full_series(bold_chunkwise=False)
+        assert len(wc_block.onset_time_list) == 1
+
+    def test_generate_full_series_one_task_bold_chunkwise(self, c_test):
+        C_task_dict, C_rest, D = c_test
+        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=False,
+                                 onset_time_list=[2, 4.3], duration_list=[1, 1.5], task_name_list=["task_A", "task_B"],
+                                 append_outputs=False, last_duration=8, bold=False, chunkwise=False)
+        wc_block.generate_full_series(bold_chunkwise=True, TR=0.75)
         assert len(wc_block.onset_time_list) == 1
 
     def test_generate_full_series_two_task(self, c_test):
@@ -73,6 +81,15 @@ class TestWCOnsetDesign:
                                  task_name_list=["task_A", "task_B", "task_A", "task_A"],
                                  last_duration=4, append_outputs=True, bold=False)
         wc_block.generate_full_series()
+        assert len(wc_block.onset_time_list) == 1
+
+    def test_generate_full_series_two_task_bold_chunkwise(self, c_test):
+        C_task_dict, C_rest, D = c_test
+        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=True, first_duration=6,
+                                 onset_time_list=[0.01, 3.76, 6.01,  8.13], duration_list=1.5,
+                                 task_name_list=["task_A", "task_B", "task_A", "task_A"],
+                                 last_duration=4, append_outputs=False, bold=False)
+        wc_block.generate_full_series(bold_chunkwise=True, TR=0.75)
         assert len(wc_block.onset_time_list) == 1
 
     def test_generate_simple_block_design(self, c_test):
