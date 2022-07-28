@@ -28,18 +28,16 @@ def read_generate_task_matrices(mat_path, num_regions, num_modules=3,
     return: rest matrix and list of task matrices
     """
     input_data = io.loadmat(mat_path)
-    coeff_matrices = input_data["matrices"]
-    num_tasks = coeff_matrices.shape[1]
+    coeff_rest_matrix = input_data["rest_matrix"]
+    coeff_task_matrices = input_data["task_matrices"]
+    num_tasks = coeff_task_matrices.shape[1]
     names = []
     for i in range(num_tasks):
         names.append(input_data["names"][0, i][0])
-    X = coeff_matrices[0, 0][0, 0]
-    noise_factor = np.min(coeff_matrices[0, 0])
-    rest_factors = np.array([[X, noise_factor, noise_factor], [noise_factor, X, noise_factor],
-                             [noise_factor, noise_factor, X]])
+    rest_factors = coeff_rest_matrix[0, 0]
     C_task_list = []
     for i in range(num_tasks):
-        C_task = generate_modulars(num_regions, num_modules, sigma=sigma, factors=coeff_matrices[0, i])
+        C_task = generate_modulars(num_regions, num_modules, sigma=sigma, factors=coeff_task_matrices[0, i])
         C_task = normalize(C_task, norm_type=norm_type)
         C_task_list.append(C_task)
 
