@@ -124,7 +124,7 @@ class TestWCOnsetDesign:
         mat_path = '../data/smallSOTs_1.5s_duration.mat'
         sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 4, "last_duration": 4}
         TR = 1
-        a_s_rate = 0.005  # sampling in s, original integration equal to 0.1 ms or 0.0001s
+        a_s_rate = 10*1e-3  # sampling in s, original integration equal to 0.1 ms or 0.0001s
         activity = True
         wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=30, **sim_parameters)
         wc_block.generate_full_series(TR=TR, activity=activity, a_s_rate=a_s_rate)
@@ -188,6 +188,15 @@ class TestHRF:
         plt.show()
         assert local_activation.shape[0]==2
 
+    def test_resample_to_TR(self):
+        first_rest = 6
+        onsets = [[5, 15, 25], [2, 8, 10]]
+        hrf = HRF(2, dt=10, TR=1, normalize_max=0.2)
+        local_activation = hrf.create_task_design_activation(onsets, duration=2,
+                                                             first_rest=first_rest, last_rest=5)
+        t_res_signal, res_signal = hrf.resample_to_TR(local_activation)
+        assert True
+
     def test_bw_convlove(self):
         first_rest = 6
         onsets = [[5, 15, 25], [2, 8, 10]]
@@ -212,4 +221,15 @@ class TestHRF:
         bw_params = {"rho": 0.34, "alpha": 0.32, "V0": 0.02, "k1_mul": None,
                      "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
         hrf.bw_convolve(local_activation, append=False, **bw_params)
+        assert True
+
+    def test_gamma_convolve(self):
+        N=2
+        first_rest = 6
+        onsets = [[5, 14, 25], [10, 20]]
+        hrf = HRF(N, dt=10, TR=1, normalize_max=0.2)
+        local_activation = hrf.create_task_design_activation(onsets, duration=2,
+                                                             first_rest=first_rest, last_rest=5)
+        gamma_params = {"length": 25, "peak":6, "undershoot":12, "beta":0.35, "scaling": 0.6}
+        hrf.gamma_convolve(local_activation, append=False, **gamma_params)
         assert True

@@ -1,5 +1,6 @@
-from scipy import signal
+from scipy import signal, stats
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 from neurolib.models.wc import WCModel
 from neurolib.utils.collections import dotdict
 from neurolib.models import bold
@@ -19,6 +20,7 @@ class WCOnsetDesign:
                  exc_ext=0.75, K_gl=2.85, sigma_ou=5 * 1e-3, **kwargs):
 
         self.Dmat = D
+        self.hrf = None
         self.BOLD = None
         self.t_BOLD = None
         self.rest_before = rest_before
@@ -164,7 +166,7 @@ class WCOnsetDesign:
         self._generate_single_block(Cmat, duration=duration, activity=activity, a_s_rate=a_s_rate)
         self.time_idxs_dict["Rest"].append([round(start_time_rest, 3), round(end_time_rest, 3)])
 
-    def generate_full_series(self, bold_chunkwise=True, TR=2, activity=True, a_s_rate=0.02):
+    def generate_full_series(self, bold_chunkwise=True, TR=2, activity=True, a_s_rate=0.02, **kwargs):
         self.bold_input_ready = True
         if bold_chunkwise:
             self.append_outputs = False
@@ -173,7 +175,7 @@ class WCOnsetDesign:
             self._generate_first_rest(activity=activity, a_s_rate=a_s_rate)
             chunksize = TR * 1000 / self.wc.params["dt"]
             assert self.wc['exc'].shape[1] >= chunksize, "First rest series should be longer than TR"
-            self.generate_first_bold_chunkwise(TR=TR)
+            self.generate_first_bold_chunkwise(TR=TR, **kwargs)
 
         else:
             self._generate_first_rest(activity=activity, a_s_rate=a_s_rate)
@@ -185,7 +187,7 @@ class WCOnsetDesign:
             start_time_block = onset_time
             self._generate_single_block(Cmat, duration=duration, activity=activity, a_s_rate=a_s_rate)
             if bold_chunkwise:
-                self.generate_next_bold_chunkwise()
+                self.generate_next_bold_chunkwise(**kwargs)
             end_time_block = onset_time + duration
             self.time_idxs_dict[task_name].append([round(start_time_block, 3), round(end_time_block, 3)])
             if i < len(self.onset_time_list) - 1:
@@ -196,12 +198,12 @@ class WCOnsetDesign:
                     end_time_rest = self.onset_time_list[i + 1]
                     self._generate_single_block(Cmat, duration=duration, activity=activity, a_s_rate=a_s_rate)
                     if bold_chunkwise:
-                        self.generate_next_bold_chunkwise()
+                        self.generate_next_bold_chunkwise(**kwargs)
                     self.time_idxs_dict["Rest"].append([round(start_time_rest, 3), round(end_time_rest, 3)])
             else:
                 self._generate_last_rest(activity=activity, a_s_rate=a_s_rate)
                 if bold_chunkwise:
-                    self.generate_next_bold_chunkwise()
+                    self.generate_next_bold_chunkwise(**kwargs)
             self.wc.inh = []
             self.wc.outputs = dotdict()
             self.wc.state = dotdict()
@@ -219,31 +221,87 @@ class WCOnsetDesign:
             self.wc.state = dotdict({})
             self.wc.exc = []
 
-    def generate_first_bold_chunkwise(self, TR=2):
+    def generate_first_bold_chunkwise(self, TR=2, **kwargs):
         self.TR = TR
-        chunksize = TR * 1000 / self.wc.params["dt"]
+        N = self.wc.params["N"]
+        dt = self.wc.params["dt"]
+        chunksize = TR * 1000 / dt
         used_last_idxs = int(self.wc['exc'].shape[1] - self.wc['exc'].shape[1] % chunksize)
         bold_input = self.wc.boldInputTransform(self.wc['exc'])
         bold_input = bold_input[:, :used_last_idxs]
         self.exc_rest = self.wc['exc'][:, used_last_idxs:]
-        self.wc.boldModel = bold.BOLDModel(self.wc.params["N"], self.wc.params["dt"])
-        self.wc.boldModel.samplingRate_NDt = int(round(TR * 1000 / self.wc.boldModel.dt))
-        self.wc.boldModel.run(bold_input, append=False)
-        self.BOLD = self.wc.boldModel.BOLD
-        self.t_BOLD = self.wc.boldModel.t_BOLD
+        self.hrf = HRF(N, dt=dt, TR=TR, normalize_input=False)
+        self.hrf.bw_convolve(bold_input, append=False, **kwargs)
+        # self.wc.boldModel = bold.BOLDModel(self.wc.params["N"], self.wc.params["dt"])
+        # self.wc.boldModel.samplingRate_NDt = int(round(TR * 1000 / self.wc.boldModel.dt))
+        # self.wc.boldModel.run(bold_input, append=False)
+        # self.BOLD = self.wc.boldModel.BOLD
+        # self.t_BOLD = self.wc.boldModel.t_BOLD
+        self.BOLD = self.hrf.BOLD
+        self.t_BOLD = self.hrf.t_BOLD
 
-    def generate_next_bold_chunkwise(self):
+    def generate_next_bold_chunkwise(self, **kwargs):
         chunksize = self.TR * 1000 / self.wc.params["dt"]
         new_exc = np.hstack((self.exc_rest, self.wc['exc']))
         if new_exc.shape[1] > chunksize:
             used_last_idxs = int(new_exc.shape[1] - new_exc.shape[1] % chunksize)
             self.exc_rest = new_exc[:, used_last_idxs:]
             bold_input = self.wc.boldInputTransform(new_exc[:, :used_last_idxs])
-            self.wc.boldModel.run(bold_input, append=True)
-            self.BOLD = self.wc.boldModel.BOLD
-            self.t_BOLD = self.wc.boldModel.t_BOLD
+            # self.wc.boldModel.run(bold_input, append=True)
+            self.hrf.bw_convolve(bold_input, append=True, **kwargs)
+            self.BOLD = self.hrf.BOLD
+            self.t_BOLD = self.hrf.t_BOLD
         else:
             self.exc_rest = new_exc
+
+    def draw_envelope_bold_compare(self, node_id=2,
+                                   low_f=10, high_f=50, low_pass=10,
+                                   drop_first_sec=7, shift_sec=4, plot_first=1):
+        a_s_rate = self.activity["sampling_rate"]
+        TR = self.TR
+        nyquist = 1 / a_s_rate / 2
+        plot_first_dt = int(plot_first / a_s_rate)
+        raw_signal = self.activity["series"][node_id, :]
+        high_band = high_f / nyquist
+        low_band = low_f / nyquist
+        b1, a1 = signal.butter(4, [low_band, high_band], btype='bandpass')
+
+        emg_filtered = signal.filtfilt(b1, a1, raw_signal)
+        fig, axs = plt.subplots(3, 1, figsize=(12, 10))
+        axs[0].plot(raw_signal[:plot_first_dt]);
+        axs[0].set_title("Raw neuronal activity")
+        axs[1].plot(emg_filtered[:plot_first_dt]);
+        axs[1].set_title(f"Filtered neuronal with low:{low_f} high:{high_f}")
+
+        low_pass = low_pass / nyquist
+        b2, a2 = signal.butter(4, low_pass, btype='lowpass')
+        emg_envelope = signal.filtfilt(b2, a2, abs(emg_filtered))
+        hilbert_envelope = np.abs(signal.hilbert(emg_filtered))
+        # plt.plot(emg_envelope)
+        axs[1].plot(hilbert_envelope[:plot_first_dt]);
+
+        drop_first_sec_TR = int(drop_first_sec / TR)
+        drop_first_sec_dt = int(drop_first_sec / a_s_rate)
+        shift = int(shift_sec / (a_s_rate))
+        step = int(TR / a_s_rate)
+        env_scaled_shifted = normalize(hilbert_envelope[drop_first_sec_dt - shift::step]).flatten()
+        bold_scaled = normalize(self.BOLD[node_id, drop_first_sec:]).flatten()
+        sig_len = min(len(env_scaled_shifted), len(bold_scaled))
+        rcoeff, p_val = stats.pearsonr(env_scaled_shifted[:sig_len], bold_scaled[:sig_len])
+        time = np.arange(sig_len) * TR
+        axs[2].plot(time, env_scaled_shifted[:sig_len], label="Envelope");
+        axs[2].plot(time, bold_scaled[:sig_len], 'orange', label="BOLD");
+        plt.legend();
+        axs[2].set_title(f"Shifted envelope with {shift_sec} s and BOLD, rcoeff {rcoeff:.2f}, p_val {(p_val):.3f} ")
+        fig.tight_layout()
+
+
+def normalize(signal):
+    if signal.ndim == 1:
+        signal = signal.reshape(1, -1)
+    mean_ = np.mean(signal, axis=1).reshape(-1, 1)
+    std_ = np.std(signal, axis=1).reshape(-1, 1)
+    return (signal - mean_) / std_
 
     # toDO соединить в блок
 
@@ -254,13 +312,14 @@ class HRF:
         BOLD activity is downsampled according to TR.
         BOLD simulation results are saved in t_BOLD, BOLD instance attributes.
     """
+
     def __init__(self, N, dt=10, TR=2, normalize_input=True, normalize_max=50):
         self.N = N
         self.dt = dt  # in ms
         self.TR = TR  # in seconds
         self.normalize_input = normalize_input
         self.normalize_max = normalize_max
-        self.samplingRate_NDt = int(round(TR*1000 / dt))
+        self.samplingRate_NDt = int(round(TR * 1000 / dt))
 
         # return arrays
         self.t_BOLD = np.array([], dtype="f", ndmin=2)
@@ -293,7 +352,7 @@ class HRF:
         if isinstance(onsets[0], (int, float)):
             onsets = self.N * [onsets]  # just duplicate for all regions
         max_onset = np.max([np.max(onset) for onset in onsets])
-        length = int((max_onset+duration+last_rest) * 1000 / self.dt)
+        length = int((max_onset + duration + last_rest) * 1000 / self.dt)
         length_first_rest = int(first_rest * 1000 / self.dt)
         activation = np.zeros((self.N, length))
         assert isinstance(onsets, list), "Onsets should be a list or list of lists"
@@ -305,24 +364,67 @@ class HRF:
                 activation[i, start:end] = 1
         return np.hstack((np.zeros((self.N, length_first_rest)), activation))
 
+    def resample_to_TR(self, signal , idxLastT=0):
+        """ Resampling made with accordance to neurolib
+        Args:
+            signal (np.ndaray): numpy nd array
+
+        Returns:
+            resampled to TR signal
+        """
+        signal_resampled = signal[:, self.samplingRate_NDt - np.mod(idxLastT - 1, self.samplingRate_NDt):: self.samplingRate_NDt]
+        t_new_idx = np.arange(signal.shape[1])
+        t_resampled = (
+                t_new_idx[self.samplingRate_NDt - np.mod(idxLastT - 1, self.samplingRate_NDt):: self.samplingRate_NDt]
+                * self.dt
+        )
+        return t_resampled, signal_resampled
+
     def bw_convolve(self, activity, append=False, **kwargs):
         assert activity.shape[0] == self.N, "Input shape must be equal to Number of activations to times"
         if self.normalize_input:
-            activity = self.normalize_max*activity
+            activity = self.normalize_max * activity
 
             # Compute the BOLD signal for the chunk
         BOLD_chunk, self.X_BOLD, self.F_BOLD, self.Q_BOLD, self.V_BOLD = simulateBOLD(
-                activity,
-                self.dt * 1e-3,
-                10000 * np.ones((self.N,)),
-                X=self.X_BOLD,
-                F=self.F_BOLD,
-                Q=self.Q_BOLD,
-                V=self.V_BOLD,
-                **kwargs
-            )
+            activity,
+            self.dt * 1e-3,
+            10000 * np.ones((self.N,)),
+            X=self.X_BOLD,
+            F=self.F_BOLD,
+            Q=self.Q_BOLD,
+            V=self.V_BOLD,
+            **kwargs
+        )
 
-        # downsample BOLD
+        t_BOLD_resampled, BOLD_resampled = self.resample_to_TR(BOLD_chunk, idxLastT=self.idxLastT)
+
+        if self.BOLD.shape[1] == 0:
+            # add new data
+            self.t_BOLD = t_BOLD_resampled
+            self.BOLD = BOLD_resampled
+        elif append is True:
+            # append new data to old data
+            self.t_BOLD = np.hstack((self.t_BOLD, t_BOLD_resampled))
+            self.BOLD = np.hstack((self.BOLD, BOLD_resampled))
+        else:
+            # overwrite old data
+            self.t_BOLD = t_BOLD_resampled
+            self.BOLD = BOLD_resampled
+
+        self.BOLD_chunk = BOLD_resampled
+
+        self.idxLastT = self.idxLastT + activity.shape[1]
+
+    def gamma_convolve(self, activity, append=False, **kwargs):
+        assert activity.shape[0] == self.N, "Input shape must be equal to Number of activations to times"
+        if self.normalize_input:
+            activity = self.normalize_max * activity
+        hrf_at_dt = self._gamma_hrf(**kwargs)
+        BOLD_chunk = np.zeros_like(activity)
+        for i in range(self.N):
+            BOLD_chunk[i, :] = np.convolve(activity[i], hrf_at_dt)[:-(len(hrf_at_dt) - 1)]
+
         BOLD_resampled = BOLD_chunk[
                          :, self.samplingRate_NDt - np.mod(self.idxLastT - 1,
                                                            self.samplingRate_NDt):: self.samplingRate_NDt
@@ -350,3 +452,27 @@ class HRF:
         self.BOLD_chunk = BOLD_resampled
 
         self.idxLastT = self.idxLastT + activity.shape[1]
+
+    def _gamma_hrf(self, length=25, peak=6, undershoot=12, beta=0.35, scaling=0.6):
+        """ Return values for HRF at given times
+
+        Args:
+            peak (float):  time to peak (in seconds)
+            undershoot:
+            beta:
+            scaling:
+
+        Returns:
+
+        """
+
+        # Gamma pdf for the peak
+        from scipy.stats import gamma
+        times = np.arange(0, length, self.dt * 1e-3)
+        peak_values = gamma.pdf(times, peak)
+        # Gamma pdf for the undershoot
+        undershoot_values = gamma.pdf(times, undershoot)
+        # Combine them
+        values = peak_values - beta * undershoot_values
+        # Scale max to 0.6
+        return values / np.max(values) * scaling
