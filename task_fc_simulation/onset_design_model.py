@@ -347,7 +347,8 @@ class WCOnsetDesign:
                 trial_time_point[idx_start:idx_end] = np.arange(idx_end - idx_start)
 
         roi_idx1, roi_idx2 = np.triu_indices(N_ROIs, k=1)
-        phase_diffs = np.zeros((roi_idx1.shape[0], int(len_tasks)), dtype=complex)
+        #phase_diffs = np.zeros((roi_idx1.shape[0], int(len_tasks)), dtype=complex)
+        phase_diffs = np.zeros((roi_idx1.shape[0], int(len_tasks)))
         nyquist = 1 / s_rate / 2
         high_band = high_f / nyquist
         low_band = low_f / nyquist
@@ -356,7 +357,8 @@ class WCOnsetDesign:
         analytic_data = signal.hilbert(filtered_data)
         angles = np.angle(analytic_data)
         for r in range(roi_idx1.shape[0]):
-            phase_diffs[r, :] = np.exp(1j * (angles[roi_idx1[r], :] - angles[roi_idx2[r], :]))
+            #phase_diffs[r, :] = np.exp(1j * (angles[roi_idx1[r], :] - angles[roi_idx2[r], :]))
+            phase_diffs[r, :] = angles[roi_idx1[r], :] - angles[roi_idx2[r], :]
         act_dict = {'activity': activity, 'phase_diff': phase_diffs,
                     'time': self.activity['t'], 's_rate': s_rate, 'task_type': task_type,
                     'trial_time': trial_time_point, 'trial_number': trial_number}
