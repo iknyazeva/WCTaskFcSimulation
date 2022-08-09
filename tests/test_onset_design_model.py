@@ -124,7 +124,7 @@ class TestWCOnsetDesign:
         mat_path = '../data/smallSOTs_1.5s_duration.mat'
         sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 4, "last_duration": 4}
         TR = 1
-        a_s_rate = 10*1e-3  # sampling in s, original integration equal to 0.1 ms or 0.0001s
+        a_s_rate = 10 * 1e-3  # sampling in s, original integration equal to 0.1 ms or 0.0001s
         activity = True
         wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=30, **sim_parameters)
         wc_block.generate_full_series(TR=TR, activity=activity, a_s_rate=a_s_rate)
@@ -171,6 +171,37 @@ class TestWCOnsetDesign:
         wc_block.generate_bold(TR=2, drop_first=6, clear_exc=True)
         assert True
 
+    def test_draw_envelope_bold_compare(self):
+        sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 4, "last_duration": 4}
+        TR = 0.5
+        N_ROIs = 30
+        a_s_rate = 5 * 1e-3  # sampling in s, original integration equal to 0.1 ms or 0.0001s
+        activity = True
+        # see notebook HRFConvolution for parameters description
+        bw_params = {"rho": 0.34, "alpha": 0.32, "V0": 0.02, "k1_mul": None,
+                     "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
+        mat_path = '../data/smallSOTs_1.5s_duration.mat'
+        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)
+        wc_block.generate_full_series(TR=TR, activity=activity, a_s_rate=a_s_rate, **bw_params)
+
+        wc_block.draw_envelope_bold_compare(node_id=2, low_f=10, high_f=50, low_pass=10,
+                                            drop_first_sec=7, shift_sec=4, plot_first=3)
+        assert True
+
+    def test_compute_phase_diff(self):
+        sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 4, "last_duration": 4}
+        TR = 1
+        N_ROIs = 30
+        a_s_rate = 5 * 1e-3  # sampling in s, original integration equal to 0.1 ms or 0.0001s
+        activity = True
+        # see notebook HRFConvolution for parameters description
+        mat_path = '../data/small10SOTs_1.5s_duration.mat'
+        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)
+        wc_block.generate_full_series(TR=TR, activity=activity, a_s_rate=a_s_rate)
+        act_dict = wc_block.compute_phase_diff(low_f=30, high_f=40)
+
+        assert True
+
 
 class TestHRF:
 
@@ -183,10 +214,12 @@ class TestHRF:
         onsets = [[5, 15, 25], [2, 8, 10]]
         hrf = HRF(2, dt=10, TR=0.01, normalize_max=0.2)
         local_activation = hrf.create_task_design_activation(onsets, duration=3, first_rest=5, last_rest=5)
-        plt.subplot(121); plt.plot(local_activation[0])
-        plt.subplot(122); plt.plot(local_activation[1])
+        plt.subplot(121);
+        plt.plot(local_activation[0])
+        plt.subplot(122);
+        plt.plot(local_activation[1])
         plt.show()
-        assert local_activation.shape[0]==2
+        assert local_activation.shape[0] == 2
 
     def test_resample_to_TR(self):
         first_rest = 6
@@ -204,12 +237,13 @@ class TestHRF:
         local_activation = hrf.create_task_design_activation(onsets, duration=2,
                                                              first_rest=first_rest, last_rest=5)
         bw_params = {"rho": 0.34, "alpha": 0.32, "V0": 0.02, "k1_mul": None,
-                     "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau":None}
+                     "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
         hrf.bw_convolve(local_activation, append=False, **bw_params)
-        #plt.plot(task_input[601:])
-        #plt.plot(convloved_task_input.flatten()[600:])
-        #plt.show()
+        # plt.plot(task_input[601:])
+        # plt.plot(convloved_task_input.flatten()[600:])
+        # plt.show()
         assert True
+
     def test_bw_convole_1(self):
         N = 2
         first_rest = 6
@@ -224,12 +258,12 @@ class TestHRF:
         assert True
 
     def test_gamma_convolve(self):
-        N=2
+        N = 2
         first_rest = 6
         onsets = [[5, 14, 25], [10, 20]]
         hrf = HRF(N, dt=10, TR=1, normalize_max=0.2)
         local_activation = hrf.create_task_design_activation(onsets, duration=2,
                                                              first_rest=first_rest, last_rest=5)
-        gamma_params = {"length": 25, "peak":6, "undershoot":12, "beta":0.35, "scaling": 0.6}
+        gamma_params = {"length": 25, "peak": 6, "undershoot": 12, "beta": 0.35, "scaling": 0.6}
         hrf.gamma_convolve(local_activation, append=False, **gamma_params)
         assert True

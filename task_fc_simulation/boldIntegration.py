@@ -105,6 +105,10 @@ def integrateBOLD_numba(BOLD, X, Q, F, V, Z, dt, N, rho, alpha, V0, k1, k2, k3, 
     """
 
     EPS = 1e-120  # epsilon for softening
+    #X[0] = 0
+    #F[0] = 1
+    #V[0] = 1
+    #Q[0] = 1
 
     for i in range(len(Z[0, :])):  # loop over all timesteps
         # component-wise loop for compatibilty with numba

@@ -1,5 +1,6 @@
 from scipy import signal, stats
 from tqdm import tqdm
+import xarray as xr
 import matplotlib.pyplot as plt
 from neurolib.models.wc import WCModel
 from neurolib.utils.collections import dotdict
@@ -255,7 +256,7 @@ class WCOnsetDesign:
             self.exc_rest = new_exc
 
     def draw_envelope_bold_compare(self, node_id=2,
-                                   low_f=10, high_f=50, low_pass=10,
+                                   low_f=10, high_f=50, low_pass=None,
                                    drop_first_sec=7, shift_sec=4, plot_first=1):
         a_s_rate = self.activity["sampling_rate"]
         TR = self.TR
@@ -267,33 +268,117 @@ class WCOnsetDesign:
         b1, a1 = signal.butter(4, [low_band, high_band], btype='bandpass')
 
         emg_filtered = signal.filtfilt(b1, a1, raw_signal)
-        fig, axs = plt.subplots(3, 1, figsize=(12, 10))
-        axs[0].plot(raw_signal[:plot_first_dt]);
-        axs[0].set_title("Raw neuronal activity")
-        axs[1].plot(emg_filtered[:plot_first_dt]);
-        axs[1].set_title(f"Filtered neuronal with low:{low_f} high:{high_f}")
 
-        low_pass = low_pass / nyquist
-        b2, a2 = signal.butter(4, low_pass, btype='lowpass')
-        emg_envelope = signal.filtfilt(b2, a2, abs(emg_filtered))
-        hilbert_envelope = np.abs(signal.hilbert(emg_filtered))
-        # plt.plot(emg_envelope)
-        axs[1].plot(hilbert_envelope[:plot_first_dt]);
+        fig = plt.figure(figsize=(12, 8))
+        gs = fig.add_gridspec(3, 3)
+        ax1 = fig.add_subplot(gs[0, :])
+        #ax1.set_title('gs[0, :]')
+        ax2 = fig.add_subplot(gs[1, :])
+        #ax2.set_title('gs[1, :]')
+        ax3 = fig.add_subplot(gs[-1, :-1])
+        #ax3.set_title('gs[2, :-1]')
+        ax4 = fig.add_subplot(gs[-1, -1])
+        #ax4.set_title('gs[-1, -1]')
+        ax1.plot(raw_signal[:plot_first_dt]);
+        ax1.set_title("Raw neuronal activity")
+        ax2.plot(emg_filtered[:plot_first_dt]);
+        ax2.set_title(f"Filtered neuronal with low:{low_f} high:{high_f}")
+
+        if low_pass is not None:
+            low_pass = low_pass / nyquist
+            b2, a2 = signal.butter(4, low_pass, btype='lowpass')
+            hilbert_envelope = signal.filtfilt(b2, a2, abs(emg_filtered))
+        else:
+            hilbert_envelope = np.abs(signal.hilbert(emg_filtered))
+            # plt.plot(emg_envelope)
+        ax2.plot(hilbert_envelope[:plot_first_dt]);
 
         drop_first_sec_TR = int(drop_first_sec / TR)
         drop_first_sec_dt = int(drop_first_sec / a_s_rate)
-        shift = int(shift_sec / (a_s_rate))
         step = int(TR / a_s_rate)
+        bold_scaled = normalize(self.BOLD[node_id, drop_first_sec_TR:]).flatten()
+        #compute all shifts
+        shift_list_sec = list(np.linspace(-3, 7, 41))
+        rcoeff_list = []
+        for shift in shift_list_sec:
+            shift = int(shift / a_s_rate)
+            env_scaled_shifted = normalize(hilbert_envelope[drop_first_sec_dt - shift::step]).flatten()
+            sig_len = min(len(env_scaled_shifted), len(bold_scaled))
+            rcoeff, p_val = stats.pearsonr(env_scaled_shifted[:sig_len], bold_scaled[:sig_len])
+            rcoeff_list.append(rcoeff)
+
+        shift = int(shift_sec / a_s_rate)
         env_scaled_shifted = normalize(hilbert_envelope[drop_first_sec_dt - shift::step]).flatten()
-        bold_scaled = normalize(self.BOLD[node_id, drop_first_sec:]).flatten()
         sig_len = min(len(env_scaled_shifted), len(bold_scaled))
         rcoeff, p_val = stats.pearsonr(env_scaled_shifted[:sig_len], bold_scaled[:sig_len])
+
         time = np.arange(sig_len) * TR
-        axs[2].plot(time, env_scaled_shifted[:sig_len], label="Envelope");
-        axs[2].plot(time, bold_scaled[:sig_len], 'orange', label="BOLD");
-        plt.legend();
-        axs[2].set_title(f"Shifted envelope with {shift_sec} s and BOLD, rcoeff {rcoeff:.2f}, p_val {(p_val):.3f} ")
+        ax3.plot(time, env_scaled_shifted[:sig_len], label="Envelope");
+        ax3.plot(time, bold_scaled[:sig_len], 'orange', label="BOLD");
+        ax3.legend();
+        ax3.set_title(f"Shifted envelope with {shift_sec} s and BOLD, rcoeff {rcoeff:.2f}, p_val {(p_val):.3f} ")
+        ax4.plot(shift_list_sec, rcoeff_list)
+        ax4.set_title("Bold-Envelope correlation with different time lag")
+        ax4.set_xlabel("Time lag (seconds) ")
+        ax4.set_ylabel("Pearson r")
+
+
         fig.tight_layout()
+        return shift_list_sec, rcoeff_list
+
+    def compute_phase_diff(self, low_f=30, high_f=40, return_xr=True):
+        activity = self.activity['series']
+        N_ROIs = activity.shape[0]
+        s_rate = self.activity["sampling_rate"]
+        coeff = 1 / s_rate
+        zero_shift = self.time_idxs_dict["Rest"][0][0]
+        len_tasks = int(coeff * (self.time_idxs_dict["Rest"][-1][1] - zero_shift))
+        assert len_tasks == activity.shape[1], 'Computed length and series len should be equal'
+        task_type = np.array(['Rest'] * int(len_tasks))
+        trial_time_point = -1 + np.zeros(int(len_tasks), dtype=int)
+        tasks = ["Task_A", "Task_B"]
+        trial_number = -1 + np.zeros(int(len_tasks), dtype=int)
+        for task in tasks:
+            for i in range(len(self.time_idxs_dict[task])):
+                idx_start = int((self.time_idxs_dict[task][i][0] - zero_shift) * coeff)
+                idx_end = int((self.time_idxs_dict[task][i][1] - zero_shift) * coeff)
+                task_type[idx_start:idx_end] = task.split('_')[-1]
+                trial_number[idx_start:idx_end] = int(i)
+                trial_time_point[idx_start:idx_end] = np.arange(idx_end - idx_start)
+
+        roi_idx1, roi_idx2 = np.triu_indices(N_ROIs, k=1)
+        phase_diffs = np.zeros((roi_idx1.shape[0], int(len_tasks)), dtype=complex)
+        nyquist = 1 / s_rate / 2
+        high_band = high_f / nyquist
+        low_band = low_f / nyquist
+        b1, a1 = signal.butter(4, [low_band, high_band], btype='bandpass')
+        filtered_data = signal.filtfilt(b1, a1, activity)
+        analytic_data = signal.hilbert(filtered_data)
+        angles = np.angle(analytic_data)
+        for r in range(roi_idx1.shape[0]):
+            phase_diffs[r, :] = np.exp(1j * (angles[roi_idx1[r], :] - angles[roi_idx2[r], :]))
+        act_dict = {'activity': activity, 'phase_diff': phase_diffs,
+                    'time': self.activity['t'], 's_rate': s_rate, 'task_type': task_type,
+                    'trial_time': trial_time_point, 'trial_number': trial_number}
+        if return_xr:
+            act_vars = {'neural_activity': (['region', 'time'], act_dict['activity'],
+                                            {'long_name': 'wc simulated wc neural activity'}),
+                        'phase_diff': (['reg_reg', 'time'], act_dict['phase_diff'])
+                        }
+
+            coords = {'time': (['time'], act_dict['time'], {'units': 'm/s',
+                                                            'sampling_rate': act_dict['s_rate']}),
+                      'task_type': ('time', act_dict['task_type']),
+                      'trial_number': ('time', act_dict['trial_number']),
+                      'trial_time_point': ('time', act_dict['trial_time'])
+                      }
+            attrs = {"model": "WC"}
+            ds = xr.Dataset(data_vars=act_vars,
+                            coords=coords, attrs=attrs)
+
+            return ds
+        else:
+            return act_dict
 
 
 def normalize(signal):
@@ -329,7 +414,8 @@ class HRF:
         self.idxLastT = 0  # Index of the last computed t
 
         # initialize BOLD model variables
-        self.X_BOLD = np.ones((N,))
+        #self.X_BOLD = np.ones((N,))
+        self.X_BOLD = np.zeros((N,))
         # Vasso dilatory signal
         self.F_BOLD = np.ones((N,))
         # Blood flow
@@ -364,7 +450,7 @@ class HRF:
                 activation[i, start:end] = 1
         return np.hstack((np.zeros((self.N, length_first_rest)), activation))
 
-    def resample_to_TR(self, signal , idxLastT=0):
+    def resample_to_TR(self, signal, idxLastT=0):
         """ Resampling made with accordance to neurolib
         Args:
             signal (np.ndaray): numpy nd array
@@ -372,8 +458,9 @@ class HRF:
         Returns:
             resampled to TR signal
         """
-        signal_resampled = signal[:, self.samplingRate_NDt - np.mod(idxLastT - 1, self.samplingRate_NDt):: self.samplingRate_NDt]
-        t_new_idx = np.arange(signal.shape[1])
+        signal_resampled = signal[:,
+                           self.samplingRate_NDt - np.mod(idxLastT - 1, self.samplingRate_NDt):: self.samplingRate_NDt]
+        t_new_idx = idxLastT + np.arange(signal.shape[1])
         t_resampled = (
                 t_new_idx[self.samplingRate_NDt - np.mod(idxLastT - 1, self.samplingRate_NDt):: self.samplingRate_NDt]
                 * self.dt
