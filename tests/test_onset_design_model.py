@@ -121,13 +121,34 @@ class TestWCOnsetDesign:
         assert len(wc_block.onset_time_list) == 1
 
     def test_full_series_from_mat(self):
-        mat_path = '../data/smallSOTs_1.5s_duration.mat'
-        sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 4, "last_duration": 4}
-        TR = 1
-        a_s_rate = 10 * 1e-3  # sampling in s, original integration equal to 0.1 ms or 0.0001s
+        N_ROIs = 30
+        wc_params = {'exc_ext': 0.76,  # baseline external input to E
+                     'K_gl': 2.72,  # global coupling strength
+                     'sigma_ou': 4.9 * 1e-3,  # noise intensity
+                     'inh_ext': 0,  # baseline external input to I
+                     'tau_ou': 5,  # ms Timescale of the Ornstein-Uhlenbeck noise process
+                     'a_exc': 1.5,  # excitatory gain
+                     'a_inh': 1.5,  # inhibitory gain
+                     'c_excexc': 16,  # local E-E coupling
+                     'c_excinh': 15,  # local E-I coupling
+                     'c_inhexc': 12,  # local I-E coupling
+                     'c_inhinh': 3,  # local I-I coupling
+                     'mu_exc': 3,  # excitatory firing threshold
+                     'mu_inh': 3,  # inhibitory firing threshold
+                     'tau_exc': 2.5,  # excitatory time constant
+                     'tau_inh': 3.75,  # inhibitory time constant
+                     'signalV': 10  # signal transmission speed between areas
+                     }
+        mat_path = '../data/small_01_BLOCK.mat'
+        sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 6, "last_duration": 20}
+        TR = 2
+        a_s_rate = 5 * 1e-3  # sampling in s, original integration equal to 0.1 ms or 0.0001s
+        bw_params = {"rho": 0.34, "alpha": 0.32, "V0": 0.02, "k1_mul": None,
+                     "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
         activity = True
-        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=30, **sim_parameters)
-        wc_block.generate_full_series(TR=TR, activity=activity, a_s_rate=a_s_rate)
+        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=N_ROIs, **wc_params, **sim_parameters)
+        wc_block.generate_full_series(TR=TR, activity=activity, a_s_rate=a_s_rate, **bw_params)
+        t_coactiv, coactiv, bold_coactiv = wc_block.generate_local_activations(mat_path, act_scaling=0.5, **bw_params)
         assert True
 
     def test_generate_simple_block_design(self, c_test):

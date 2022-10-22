@@ -1,4 +1,4 @@
-from scipy import signal, stats
+from scipy import signal, stats, io
 from tqdm import tqdm
 import xarray as xr
 import matplotlib.pyplot as plt
@@ -147,7 +147,7 @@ class WCOnsetDesign:
     def _generate_first_rest(self, activity=True, a_s_rate=0.02):
         # first block in design always started with resting state
         if self.rest_before:
-            start_time_rest = -self.last_duration
+            start_time_rest = -self.first_duration
             duration = -start_time_rest + self.onset_time_list[0]
             end_time_rest = self.onset_time_list[0]
         else:
@@ -167,7 +167,21 @@ class WCOnsetDesign:
         self._generate_single_block(Cmat, duration=duration, activity=activity, a_s_rate=a_s_rate)
         self.time_idxs_dict["Rest"].append([round(start_time_rest, 3), round(end_time_rest, 3)])
 
-    def generate_full_series(self, bold_chunkwise=True, TR=2, activity=True, a_s_rate=0.02, **kwargs):
+    def generate_full_series(self, bold_chunkwise=True, TR=2, activity=True, a_s_rate=0.02,
+                             clear_exc=True, **kwargs):
+        """
+
+        Args:
+            bold_chunkwise (bool):
+            TR:
+            activity:
+            a_s_rate:
+            clear_exc (bool): if save original excitation activity
+            **kwargs:
+
+        Returns:
+
+        """
         self.bold_input_ready = True
         if bold_chunkwise:
             self.append_outputs = False
@@ -206,8 +220,32 @@ class WCOnsetDesign:
                 if bold_chunkwise:
                     self.generate_next_bold_chunkwise(**kwargs)
             self.wc.inh = []
+            if clear_exc:
+                self.wc.exc = []
+            self.wc.t = []
             self.wc.outputs = dotdict()
             self.wc.state = dotdict()
+
+    def generate_local_activations(self, mat_path, act_scaling=0.5, **kwargs):
+        N = self.wc.params["N"]
+        first_rest = self.first_duration
+        last_rest = self.last_duration
+        TR = self.TR
+        dt = self.wc.params["dt"]
+        input_data = io.loadmat(mat_path)
+        task_duration = float(input_data["durations"][0, 0].squeeze())
+
+        onset_taskA = list(input_data['onsets'][0, 0].squeeze().round(2))
+        onset_taskB = list(input_data['onsets'][0, 1].squeeze().round(2))
+        onset_taskAB, _, _ = read_onsets_from_input(mat_path)
+        onset_taskAB = list(onset_taskAB)
+        onsets = [onset_taskA] * (N // 3) + [onset_taskAB] * (N // 3) + [onset_taskB] * (N // 3)
+        hrf = HRF(N, dt=dt, TR=TR, normalize_max=act_scaling)
+        local_activation = hrf.create_task_design_activation(onsets, duration=task_duration,
+                                                             first_rest=first_rest, last_rest=last_rest)
+        hrf.bw_convolve(local_activation, append=False, **kwargs)
+        t_res_activ, res_activ = hrf.resample_to_TR(local_activation)
+        return t_res_activ, res_activ, hrf.BOLD
 
     def generate_bold(self, TR=2, drop_first=12, clear_exc=True):
         assert self.bold_input_ready, "You need to generate neural activity first"
@@ -272,13 +310,13 @@ class WCOnsetDesign:
         fig = plt.figure(figsize=(12, 8))
         gs = fig.add_gridspec(3, 3)
         ax1 = fig.add_subplot(gs[0, :])
-        #ax1.set_title('gs[0, :]')
+        # ax1.set_title('gs[0, :]')
         ax2 = fig.add_subplot(gs[1, :])
-        #ax2.set_title('gs[1, :]')
+        # ax2.set_title('gs[1, :]')
         ax3 = fig.add_subplot(gs[-1, :-1])
-        #ax3.set_title('gs[2, :-1]')
+        # ax3.set_title('gs[2, :-1]')
         ax4 = fig.add_subplot(gs[-1, -1])
-        #ax4.set_title('gs[-1, -1]')
+        # ax4.set_title('gs[-1, -1]')
         ax1.plot(raw_signal[:plot_first_dt]);
         ax1.set_title("Raw neuronal activity")
         ax2.plot(emg_filtered[:plot_first_dt]);
@@ -297,7 +335,7 @@ class WCOnsetDesign:
         drop_first_sec_dt = int(drop_first_sec / a_s_rate)
         step = int(TR / a_s_rate)
         bold_scaled = normalize(self.BOLD[node_id, drop_first_sec_TR:]).flatten()
-        #compute all shifts
+        # compute all shifts
         shift_list_sec = list(np.linspace(-3, 7, 41))
         rcoeff_list = []
         for shift in shift_list_sec:
@@ -322,9 +360,11 @@ class WCOnsetDesign:
         ax4.set_xlabel("Time lag (seconds) ")
         ax4.set_ylabel("Pearson r")
 
-
         fig.tight_layout()
-        return shift_list_sec, rcoeff_list
+        return {'rs': np.array([shift_list_sec, rcoeff_list]),
+                'raw_first': raw_signal[:plot_first_dt],
+                'bold_envelope': np.array([time, env_scaled_shifted[:sig_len], bold_scaled[:sig_len]]),
+                'filtered': np.array([emg_filtered[:plot_first_dt], hilbert_envelope[:plot_first_dt]])}
 
     def compute_phase_diff(self, low_f=30, high_f=40, return_xr=True):
         activity = self.activity['series']
@@ -347,7 +387,7 @@ class WCOnsetDesign:
                 trial_time_point[idx_start:idx_end] = np.arange(idx_end - idx_start)
 
         roi_idx1, roi_idx2 = np.triu_indices(N_ROIs, k=1)
-        #phase_diffs = np.zeros((roi_idx1.shape[0], int(len_tasks)), dtype=complex)
+        # phase_diffs = np.zeros((roi_idx1.shape[0], int(len_tasks)), dtype=complex)
         phase_diffs = np.zeros((roi_idx1.shape[0], int(len_tasks)))
         nyquist = 1 / s_rate / 2
         high_band = high_f / nyquist
@@ -357,7 +397,7 @@ class WCOnsetDesign:
         analytic_data = signal.hilbert(filtered_data)
         angles = np.angle(analytic_data)
         for r in range(roi_idx1.shape[0]):
-            #phase_diffs[r, :] = np.exp(1j * (angles[roi_idx1[r], :] - angles[roi_idx2[r], :]))
+            # phase_diffs[r, :] = np.exp(1j * (angles[roi_idx1[r], :] - angles[roi_idx2[r], :]))
             phase_diffs[r, :] = angles[roi_idx1[r], :] - angles[roi_idx2[r], :]
         act_dict = {'activity': activity, 'phase_diff': phase_diffs,
                     'time': self.activity['t'], 's_rate': s_rate, 'task_type': task_type,
@@ -416,7 +456,7 @@ class HRF:
         self.idxLastT = 0  # Index of the last computed t
 
         # initialize BOLD model variables
-        #self.X_BOLD = np.ones((N,))
+        # self.X_BOLD = np.ones((N,))
         self.X_BOLD = np.zeros((N,))
         # Vasso dilatory signal
         self.F_BOLD = np.ones((N,))
