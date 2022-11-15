@@ -34,6 +34,8 @@ class TestWCOnsetDesign:
         mat_path = '../data/SOTs_1.5s_duration.mat'
         C_rest, C_task_dict = read_generate_task_matrices(mat_path, 30, num_modules=3,
                                                           sigma=0.1, norm_type="cols")
+        C_rest, C_task_dict = read_generate_task_matrices(mat_path, 30, num_modules=3,
+                                                          sigma=0.1, norm_type="raw")
         assert True
 
     def test_init(self, c_test):
@@ -220,6 +222,20 @@ class TestWCOnsetDesign:
         wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)
         wc_block.generate_full_series(TR=TR, activity=activity, a_s_rate=a_s_rate)
         act_dict = wc_block.compute_phase_diff(low_f=30, high_f=40)
+
+        assert True
+
+    def test_generate_local_activations(self):
+        sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 6, "last_duration": 20}
+        TR = 2
+        N_ROIs=30
+        mat_path = "../data/02_EVENT_[2_TR]_[1s_DUR]_[6s_ISI]_[100_TRIALS].mat"
+        bw_params = {"rho": 0.34, "alpha": 0.32, "V0": 0.02, "k1_mul": None,
+                     "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
+        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)
+        wc_block.TR=2
+        t_coactiv, coactiv, bold_coactiv = wc_block.generate_local_activations(mat_path, act_scaling=0.5, **bw_params)
+
 
         assert True
 

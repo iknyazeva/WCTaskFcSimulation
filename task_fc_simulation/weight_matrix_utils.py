@@ -30,6 +30,7 @@ def generate_modulars(num_regions, num_modules, num_regions_per_modules=None, fa
 
 def normalize(weight_matrix, norm_type='sum'):
     norm_weight_matrix = weight_matrix.copy()
+    
 
     if norm_type == 'cols':
         norm_weight_matrix = norm_weight_matrix / np.sum(norm_weight_matrix, axis=1)[:, None]
@@ -37,5 +38,7 @@ def normalize(weight_matrix, norm_type='sum'):
         norm_weight_matrix = norm_weight_matrix / np.max(weight_matrix)
     elif norm_type == 'sum':
         norm_weight_matrix = norm_weight_matrix / np.sum(weight_matrix)
+    elif norm_type == 'raw':
+        norm_weight_matrix  = norm_weight_matrix
 
     return norm_weight_matrix
