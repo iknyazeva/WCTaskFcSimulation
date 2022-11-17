@@ -41,7 +41,7 @@ def read_generate_task_matrices(mat_path, num_regions, num_modules=3,
         C_task = normalize(C_task, norm_type=norm_type)
         C_task_list.append(C_task)
 
-    C_rest = generate_modulars(num_regions, num_modules, sigma=0.1, factors=rest_factors)
+    C_rest = generate_modulars(num_regions, num_modules, sigma=sigma, factors=rest_factors)
     C_rest = normalize(C_rest, norm_type=norm_type)
     C_task_dict = dict(zip(names, C_task_list))
 
