@@ -100,12 +100,12 @@ class WCOnsetDesign:
         self.wc.params['c_inhexc'] = self.kwargs['c_inhexc']
 
     @classmethod
-    def from_matlab_structure(cls, mat_path, num_regions=30, delay=250, append_outputs=False,
-                              bold=False, chunkwise=False,
+    def from_matlab_structure(cls, mat_path, sigma=0.1, norm_type='cols', num_regions=30,
+                              bold=False, chunkwise=False, delay=250, append_outputs=False,
                               rest_before=True, first_duration=12, last_duration=8,
                               exc_ext=0.75, K_gl=2.85, sigma_ou=5 * 1e-3, **kwargs):
         C_rest, C_task_dict = read_generate_task_matrices(mat_path, num_regions, num_modules=3,
-                                                          sigma=0.1, norm_type="cols")
+                                                          sigma=sigma, norm_type=norm_type)
         D = np.ones((num_regions, num_regions)) * delay
 
         onset_time_list, task_names_list, duration_list = read_onsets_from_input(mat_path)
