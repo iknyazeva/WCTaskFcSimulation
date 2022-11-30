@@ -34,6 +34,9 @@ def normalize(weight_matrix, norm_type='sum'):
 
     if norm_type == 'cols':
         norm_weight_matrix = norm_weight_matrix / np.sum(norm_weight_matrix, axis=1)[:, None]
+    elif norm_type == 'sym_cols':
+        N = weight_matrix.shape[0]
+        norm_weight_matrix = N*norm_weight_matrix / np.sum(weight_matrix)
     elif norm_type == 'max':
         norm_weight_matrix = norm_weight_matrix / np.max(weight_matrix)
     elif norm_type == 'sum':
