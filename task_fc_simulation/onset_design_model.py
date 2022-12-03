@@ -17,7 +17,7 @@ class WCOnsetDesign:
 
     def __init__(self, C_task_dict, C_rest, D, onset_time_list=None, task_name_list=None, duration_list=3,
                  rest_before=True, first_duration=12, last_duration=8, append_outputs=False, bold=False,
-                 chunkwise=False,
+                 chunkwise=False, num_modules=3,
                  exc_ext=0.75, K_gl=2.85, sigma_ou=5 * 1e-3, **kwargs):
 
         self.Dmat = D
@@ -64,6 +64,7 @@ class WCOnsetDesign:
         time_idxs_dict = {"Rest": []}
         time_idxs_dict.update({key: [] for key in self.C_task_dict.keys()})
         self.time_idxs_dict = time_idxs_dict
+        self.num_modules = num_modules
 
         kw_defaults = {'inh_ext': 0, 'tau_ou': 5, 'a_exc': 1.5, 'a_inh': 1.5,
                        'c_excexc': 16, 'c_excinh': 15, 'c_inhexc': 12, 'c_inhinh': 3,
@@ -104,6 +105,7 @@ class WCOnsetDesign:
                               bold=False, chunkwise=False, delay=250, append_outputs=False,
                               rest_before=True, first_duration=12, last_duration=8,
                               exc_ext=0.75, K_gl=2.85, sigma_ou=5 * 1e-3, **kwargs):
+        cls.num_modules = num_modules
         C_rest, C_task_dict = read_generate_task_matrices(mat_path, num_regions, num_modules,
                                                           sigma=sigma, norm_type=norm_type)
         D = np.ones((num_regions, num_regions)) * delay
@@ -113,7 +115,7 @@ class WCOnsetDesign:
         return cls(C_task_dict, C_rest, D, onset_time_list=onset_time_list,
                    task_name_list=task_names_list, duration_list=duration_list,
                    rest_before=rest_before, first_duration=first_duration, last_duration=last_duration,
-                   append_outputs=append_outputs, bold=bold, chunkwise=chunkwise,
+                   append_outputs=append_outputs, bold=bold, chunkwise=chunkwise, num_modules=num_modules,
                    exc_ext=exc_ext, K_gl=K_gl, sigma_ou=sigma_ou, **kwargs)
 
     def _generate_single_block(self, Cmat, duration=10, activity=True, a_s_rate=0.02):
@@ -239,7 +241,19 @@ class WCOnsetDesign:
         onset_taskB = list(input_data['onsets'][0, 1].squeeze().round(2))
         onset_taskAB, _, _ = read_onsets_from_input(mat_path)
         onset_taskAB = list(onset_taskAB)
-        onsets = [onset_taskA] * (N // 3) + [onset_taskAB] * (N // 3) + [onset_taskB] * (N // 3)
+        activations_A = input_data['activations'][0][0].squeeze()
+        activations_B = input_data['activations'][0][1].squeeze()
+        assert len(activations_A) == len(activations_B), "Length of activations arrays should be equal for all task"
+        assert len(activations_A) == self.num_modules,  "Length of activations should be equal to number of modules"
+        onsets = []
+
+        for i in range(self.num_modules):
+            if (activations_A[i]==1) and (activations_B[i]==1):
+                onsets.extend([onset_taskAB]*(N // self.num_modules))
+            elif (activations_A[i]==1) and (activations_B[i]==0):
+                onsets.extend([onset_taskA] * (N // self.num_modules))
+            else:
+                onsets.extend([onset_taskB] * (N // self.num_modules))
         hrf = HRF(N, dt=dt, TR=TR, normalize_max=act_scaling)
         local_activation = hrf.create_task_design_activation(onsets, duration=task_duration,
                                                              first_rest=first_rest, last_rest=last_rest)
