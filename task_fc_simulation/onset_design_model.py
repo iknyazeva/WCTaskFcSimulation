@@ -309,7 +309,8 @@ class WCOnsetDesign:
 
     def draw_envelope_bold_compare(self, node_id=2,
                                    low_f=10, high_f=50, low_pass=None,
-                                   drop_first_sec=7, shift_sec=4, plot_first=1):
+                                   drop_first_sec=7, shift_sec=4, plot_first=1, to_plot=True):
+        
         a_s_rate = self.activity["sampling_rate"]
         TR = self.TR
         nyquist = 1 / a_s_rate / 2
@@ -321,21 +322,6 @@ class WCOnsetDesign:
 
         emg_filtered = signal.filtfilt(b1, a1, raw_signal)
 
-        fig = plt.figure(figsize=(12, 8))
-        gs = fig.add_gridspec(3, 3)
-        ax1 = fig.add_subplot(gs[0, :])
-        # ax1.set_title('gs[0, :]')
-        ax2 = fig.add_subplot(gs[1, :])
-        # ax2.set_title('gs[1, :]')
-        ax3 = fig.add_subplot(gs[-1, :-1])
-        # ax3.set_title('gs[2, :-1]')
-        ax4 = fig.add_subplot(gs[-1, -1])
-        # ax4.set_title('gs[-1, -1]')
-        ax1.plot(raw_signal[:plot_first_dt]);
-        ax1.set_title("Raw neuronal activity")
-        ax2.plot(emg_filtered[:plot_first_dt]);
-        ax2.set_title(f"Filtered neuronal with low:{low_f} high:{high_f}")
-
         if low_pass is not None:
             low_pass = low_pass / nyquist
             b2, a2 = signal.butter(4, low_pass, btype='lowpass')
@@ -343,7 +329,8 @@ class WCOnsetDesign:
         else:
             hilbert_envelope = np.abs(signal.hilbert(emg_filtered))
             # plt.plot(emg_envelope)
-        ax2.plot(hilbert_envelope[:plot_first_dt]);
+            
+        
 
         drop_first_sec_TR = int(drop_first_sec / TR)
         drop_first_sec_dt = int(drop_first_sec / a_s_rate)
@@ -363,18 +350,37 @@ class WCOnsetDesign:
         env_scaled_shifted = normalize(hilbert_envelope[drop_first_sec_dt - shift::step]).flatten()
         sig_len = min(len(env_scaled_shifted), len(bold_scaled))
         rcoeff, p_val = stats.pearsonr(env_scaled_shifted[:sig_len], bold_scaled[:sig_len])
-
         time = np.arange(sig_len) * TR
-        ax3.plot(time, env_scaled_shifted[:sig_len], label="Envelope");
-        ax3.plot(time, bold_scaled[:sig_len], 'orange', label="BOLD");
-        ax3.legend();
-        ax3.set_title(f"Shifted envelope with {shift_sec} s and BOLD, rcoeff {rcoeff:.2f}, p_val {(p_val):.3f} ")
-        ax4.plot(shift_list_sec, rcoeff_list)
-        ax4.set_title("Bold-Envelope correlation with different time lag")
-        ax4.set_xlabel("Time lag (seconds) ")
-        ax4.set_ylabel("Pearson r")
+        
+        if to_plot:
+            fig = plt.figure(figsize=(12, 8))
+            gs = fig.add_gridspec(3, 3)
+            ax1 = fig.add_subplot(gs[0, :])
+            # ax1.set_title('gs[0, :]')
+            ax2 = fig.add_subplot(gs[1, :])
+            # ax2.set_title('gs[1, :]')
+            ax3 = fig.add_subplot(gs[-1, :-1])
+            # ax3.set_title('gs[2, :-1]')
+            ax4 = fig.add_subplot(gs[-1, -1])
+            # ax4.set_title('gs[-1, -1]')
+            ax1.plot(raw_signal[:plot_first_dt]);
+            ax1.set_title("Raw neuronal activity")
+            ax2.plot(emg_filtered[:plot_first_dt]);
+            ax2.set_title(f"Filtered neuronal with low:{low_f} high:{high_f}")
 
-        fig.tight_layout()
+            ax2.plot(hilbert_envelope[:plot_first_dt]);
+            
+            ax3.plot(time, env_scaled_shifted[:sig_len], label="Envelope");
+            ax3.plot(time, bold_scaled[:sig_len], 'orange', label="BOLD");
+            ax3.legend();
+            ax3.set_title(f"Shifted envelope with {shift_sec} s and BOLD, rcoeff {rcoeff:.2f}, p_val {(p_val):.3f} ")
+            ax4.plot(shift_list_sec, rcoeff_list)
+            ax4.set_title("Bold-Envelope correlation with different time lag")
+            ax4.set_xlabel("Time lag (seconds) ")
+            ax4.set_ylabel("Pearson r")
+
+            fig.tight_layout()
+            
         return {'rs': np.array([shift_list_sec, rcoeff_list]),
                 'raw_first': raw_signal[:plot_first_dt],
                 'bold_envelope': np.array([time, env_scaled_shifted[:sig_len], bold_scaled[:sig_len]]),
