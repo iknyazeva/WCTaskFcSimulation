@@ -15,15 +15,43 @@ class WCOnsetDesign:
         with predefined onset times
     """
 
+    #todo Add output activations and description
+
     def __init__(self, C_task_dict, C_rest, D, onset_time_list=None, task_name_list=None, duration_list=3,
-                 rest_before=True, first_duration=12, last_duration=8, append_outputs=False, bold=False,
+                 rest_before=True, first_duration=6, last_duration=8, append_outputs=False, bold=False,
                  chunkwise=False, num_modules=3,
                  exc_ext=0.75, K_gl=2.85, sigma_ou=5 * 1e-3, **kwargs):
+        """
+
+        Args:
+            C_task_dict (dict): dictionary with the matrices for all tasks used in experiment
+            C_rest (np.ndarray): matrix of synaptic weight for rest
+            D (np.ndarray): delay matrix
+            onset_time_list (list): list with the start time for the tasks
+            task_name_list (list): name of the task to start
+            duration_list (list): duration for each task
+            rest_before (bool): if need to generate rest before the start of experiment
+            first_duration (float): duration of first rest signal, in sec
+            last_duration (float): duration of last rest signal, in sec
+            append_outputs (bool): if need to append raw outputs after each integration, default False
+            bold (bool): True if use internal bold from neurolib
+            chunkwise (bool): True if use internal chunkwise from neurolib, default False
+            num_modules (int): number of modules in matrix
+            normalize_max (float): normalizing constant for bold input transformation
+            output_activation (str): type of output activation to pass to bold signal, possible params: 'syn_act', 'sum'
+            exc_ext (float): excitation parameter
+            K_gl (float): coupling parameter
+            sigma_ou (float): sigma parameter
+            **kwargs: other parameters for wc model
+        """
+
 
         self.Dmat = D
         self.hrf = None
         self.BOLD = None
+        self.normalize_max = None
         self.t_BOLD = None
+        self.output_activation = None
         self.rest_before = rest_before
         self.C_rest = C_rest
         self.wc = WCModel(Cmat=self.C_rest, Dmat=self.Dmat)
@@ -55,7 +83,8 @@ class WCOnsetDesign:
         self.chunkwise = chunkwise
         self.exc_rest = None
         # activity sampling rate in ms
-        self.activity = {"series": None, "sampling_rate": 20, "idx_last_t": 0, "t": None}
+        self.activity = {"exc_series": None, "inh_series": None, "sa_series": None,
+                         "sampling_rate": 20, "idx_last_t": 0, "t": None}
         self.bold = bold
         self.bold_input_ready = False
         self.TR = None
@@ -101,8 +130,9 @@ class WCOnsetDesign:
         self.wc.params['c_inhexc'] = self.kwargs['c_inhexc']
 
     @classmethod
-    def from_matlab_structure(cls, mat_path, sigma=0.1, norm_type='cols', num_regions=30, num_modules=4,
+    def from_matlab_structure(cls, mat_path, sigma=0.1, norm_type='cols', num_regions=30, num_modules=3,
                               bold=False, chunkwise=False, delay=250, append_outputs=False,
+                              normalize_max=50, output_activation='exc',
                               rest_before=True, first_duration=12, last_duration=8,
                               exc_ext=0.75, K_gl=2.85, sigma_ou=5 * 1e-3, **kwargs):
         cls.num_modules = num_modules
@@ -115,10 +145,28 @@ class WCOnsetDesign:
         return cls(C_task_dict, C_rest, D, onset_time_list=onset_time_list,
                    task_name_list=task_names_list, duration_list=duration_list,
                    rest_before=rest_before, first_duration=first_duration, last_duration=last_duration,
-                   append_outputs=append_outputs, bold=bold, chunkwise=chunkwise, num_modules=num_modules,
+                   normalize_max=normalize_max, output_activation=output_activation,
+                   append_outputs=append_outputs, bold=bold, chunkwise=chunkwise,
+                   num_modules=num_modules,
                    exc_ext=exc_ext, K_gl=K_gl, sigma_ou=sigma_ou, **kwargs)
 
-    def _generate_single_block(self, Cmat, duration=10, activity=True, a_s_rate=0.02):
+    def _generate_single_block(self, Cmat, duration=10,
+                               activity=True, a_s_rate=0.02, syn_act=True):
+        """
+        Function for generation neural oscillations based on Cmat data.
+        On top of activations two options for handling bold signal is available: buil_in neurolib,
+        in this case atribut self.chunkwise should be set True and self.bold which will be further used in wc.run.
+        In this case bold will be generated along with excitation and inhibition activity
+        Args:
+            Cmat (np.ndarray): matrix of synaptic weight connection
+            duration (int): generation length in seconds
+            activity (bool): if activity should generated and additionally saved with resampling
+            a_s_rate (float): sampling rate
+            syn_act (bool): True if need to generate synaptic activity
+
+        Returns:
+
+        """
         # generate single block with any Cmat matrix
         if self.chunkwise:
             assert duration % 2 == 0, "For faster integration time duration is chucnkwise duration should be divisible by two "
@@ -126,17 +174,34 @@ class WCOnsetDesign:
         np.fill_diagonal(self.wc.params['Cmat'], 0)
         self.wc.params['duration'] = duration * 1000  # duration in ms
         self.wc.run(append_outputs=self.append_outputs, bold=self.bold, continue_run=True, chunkwise=self.chunkwise)
-        if not self.chunkwise and activity:
+        if syn_act:
+            syn_act_series = self.generate_syn_act_series()
+        #if not self.chunkwise and activity:
+        if activity:
             idx_last_t = self.activity["idx_last_t"]
             self.activity["sampling_rate"] = a_s_rate
             sampling_rate_dt = int(round(1000 * a_s_rate / self.wc.params["dt"]))
-            new_activity = self.wc.exc[:,
+            new_exc_activity = self.wc.exc[:,
                            sampling_rate_dt - np.mod(idx_last_t - 1, sampling_rate_dt)::sampling_rate_dt
                            ]
-            if self.activity["series"] is None:
-                self.activity["series"] = new_activity
+            new_inh_activity = self.wc.inh[:,
+                               sampling_rate_dt - np.mod(idx_last_t - 1, sampling_rate_dt)::sampling_rate_dt
+                               ]
+            if syn_act:
+                new_sa_activity = syn_act_series[:,
+                               sampling_rate_dt - np.mod(idx_last_t - 1, sampling_rate_dt)::sampling_rate_dt
+                               ]
+            if self.activity["exc_series"] is None:
+                self.activity["exc_series"] = new_exc_activity
+                self.activity["inh_series"] = new_inh_activity
+                if syn_act:
+                    self.activity["sa_series"] = new_sa_activity
             else:
-                self.activity["series"] = np.hstack((self.activity["series"], new_activity))
+                self.activity["exc_series"] = np.hstack((self.activity["exc_series"], new_exc_activity))
+                self.activity["inh_series"] = np.hstack((self.activity["inh_series"], new_inh_activity))
+                if syn_act:
+                    self.activity["sa_series"] = np.hstack((self.activity["sa_series"], new_sa_activity))
+
             new_idx_t = idx_last_t + np.arange(self.wc.exc.shape[1])
             t_activity = self.wc.params["dt"] * new_idx_t[sampling_rate_dt - np.mod(idx_last_t - 1,
                                                                                     sampling_rate_dt)::sampling_rate_dt]
@@ -146,7 +211,7 @@ class WCOnsetDesign:
                 self.activity["t"] = np.hstack((self.activity["t"], t_activity))
             self.activity["idx_last_t"] = idx_last_t + self.wc.exc.shape[1]
 
-    def _generate_first_rest(self, activity=True, a_s_rate=0.02):
+    def _generate_first_rest(self, activity=True, a_s_rate=0.02, syn_act=True):
         # first block in design always started with resting state
         if self.rest_before:
             start_time_rest = -self.first_duration
@@ -157,54 +222,70 @@ class WCOnsetDesign:
             duration = self.onset_time_list[0]
             end_time_rest = self.onset_time_list[0]
         Cmat = self.C_rest
-        self._generate_single_block(Cmat, duration=duration, activity=activity, a_s_rate=a_s_rate)
+        self._generate_single_block(Cmat, duration=duration,
+                                    activity=activity, a_s_rate=a_s_rate, syn_act=syn_act)
         self.time_idxs_dict["Rest"].append([round(start_time_rest, 3), round(end_time_rest, 3)])
 
-    def _generate_last_rest(self, activity=True, a_s_rate=0.02):
+    def _generate_last_rest(self, activity=True, a_s_rate=0.02, syn_act=True):
         start_time_rest = self.onset_time_list[-1] + self.duration_list[-1]
         Cmat = self.C_rest
         # set last rest duration equal to previous gap between onset times
         duration = self.last_duration
         end_time_rest = start_time_rest + duration
-        self._generate_single_block(Cmat, duration=duration, activity=activity, a_s_rate=a_s_rate)
+        self._generate_single_block(Cmat, duration=duration,
+                                    activity=activity, a_s_rate=a_s_rate, syn_act=syn_act)
         self.time_idxs_dict["Rest"].append([round(start_time_rest, 3), round(end_time_rest, 3)])
 
-    def generate_full_series(self, bold_chunkwise=True, TR=2, activity=True, a_s_rate=0.02,
-                             clear_exc=True, **kwargs):
+    def generate_full_series(self, bold_chunkwise=True, TR=2,
+                             activity=True, a_s_rate=0.02,
+                             normalize_max=2, output_activation='syn_act',
+                             clear_raw=True, **kwargs):
         """
+        Function for generation full length activity based on experiment design and matrices set up
 
         Args:
-            bold_chunkwise (bool):
-            TR:
-            activity:
-            a_s_rate:
-            clear_exc (bool): if save original excitation activity
+            bold_chunkwise (bool): in this case at each block or event bold signal will be computed on top of raw activity
+            TR (float): time repetition for bold signal generation
+            activity (bool): if resampled activity need to be saved
+            a_s_rate (float): sampling rate for activity resampling, im s, typical values 5*1e-3 equal to 5 ms
+            clear_raw (bool): True if clear raw excitation activity from wc model
             **kwargs:
 
         Returns:
-
+        object with BOLD and activity parameters filled
         """
-        self.bold_input_ready = True
+
+  #      assert activity == clear_raw, "Both activity and raw signal could not be False, something need to be left"
+        # set up bold parameters
+        self.output_activation = output_activation
+        self.normalize_max=normalize_max
+        self.TR = TR
         if bold_chunkwise:
+            self.bold_input_ready = True
             self.append_outputs = False
             self.bold = False
             self.chunkwise = False
-            self._generate_first_rest(activity=activity, a_s_rate=a_s_rate)
             chunksize = TR * 1000 / self.wc.params["dt"]
-            assert self.wc['exc'].shape[1] >= chunksize, "First rest series should be longer than TR"
-            self.generate_first_bold_chunkwise(TR=TR, **kwargs)
+        if self.output_activation != 'exc':
+            syn_act = True
+        self._generate_first_rest(activity=activity, a_s_rate=a_s_rate, syn_act=syn_act)
 
-        else:
-            self._generate_first_rest(activity=activity, a_s_rate=a_s_rate)
+
+        if bold_chunkwise:
+            assert self.wc['exc'].shape[1] >= chunksize, "First rest series should be longer than TR"
+            self.generate_first_bold_chunkwise(TR=TR, input_type = self.output_activation,
+                                               normalize_max=normalize_max, **kwargs)
+
         for i in range(len(self.onset_time_list)):
             task_name = self.task_name_list[i]
             Cmat = self.C_task_dict[task_name]
             onset_time = self.onset_time_list[i]
             duration = self.duration_list[i]
             start_time_block = onset_time
-            self._generate_single_block(Cmat, duration=duration, activity=activity, a_s_rate=a_s_rate)
+            self._generate_single_block(Cmat, duration=duration,
+                                        activity=activity, a_s_rate=a_s_rate, syn_act=syn_act)
             if bold_chunkwise:
-                self.generate_next_bold_chunkwise(**kwargs)
+                self.generate_next_bold_chunkwise(input_type = self.output_activation, **kwargs)
             end_time_block = onset_time + duration
             self.time_idxs_dict[task_name].append([round(start_time_block, 3), round(end_time_block, 3)])
             if i < len(self.onset_time_list) - 1:
@@ -213,20 +294,44 @@ class WCOnsetDesign:
                     Cmat = self.C_rest
                     start_time_rest = self.onset_time_list[i] + self.duration_list[i]
                     end_time_rest = self.onset_time_list[i + 1]
-                    self._generate_single_block(Cmat, duration=duration, activity=activity, a_s_rate=a_s_rate)
+                    self._generate_single_block(Cmat, duration=duration,
+                                                activity=activity, a_s_rate=a_s_rate, syn_act=syn_act)
                     if bold_chunkwise:
-                        self.generate_next_bold_chunkwise(**kwargs)
+                        self.generate_next_bold_chunkwise(input_type = self.output_activation, **kwargs)
                     self.time_idxs_dict["Rest"].append([round(start_time_rest, 3), round(end_time_rest, 3)])
             else:
-                self._generate_last_rest(activity=activity, a_s_rate=a_s_rate)
+                self._generate_last_rest(activity=activity, a_s_rate=a_s_rate, syn_act=syn_act)
                 if bold_chunkwise:
-                    self.generate_next_bold_chunkwise(**kwargs)
-            self.wc.inh = []
-            if clear_exc:
+                    self.generate_next_bold_chunkwise(input_type = self.output_activation, **kwargs)
+
+            if clear_raw:
                 self.wc.exc = []
+                self.wc.inh = []
             self.wc.t = []
             self.wc.outputs = dotdict()
             self.wc.state = dotdict()
+
+    def generate_syn_act_series(self):
+        """ function for computing integrated synaptic activity (without integration over 50ms)
+        as described in Horwitz and Tagamets (1999)
+        IN = wEE*E + WEI*E+WIE*IE +C*E
+
+        Args:
+            source (string): basis for computing isa series, possible values raw or act
+
+        Returns:
+        isa_series: np.array with the same shape as input activity
+        """
+        ee = self.wc.params['c_excexc']
+        ei = self.wc.params['c_excinh']
+        ie = self.wc.params['c_inhexc']
+        ii = self.wc.params['c_inhinh']
+
+        exc = self.wc['exc']
+        sa = ee*self.wc['exc']+ei*self.wc['exc']+ie*self.wc['inh']+ii*self.wc['inh']+self.wc.Cmat@self.wc['exc']
+        return sa
+
+
 
     def generate_local_activations(self, mat_path, act_scaling=0.5, **kwargs):
         N = self.wc.params["N"]
@@ -261,51 +366,85 @@ class WCOnsetDesign:
         t_res_activ, res_activ = hrf.resample_to_TR(local_activation)
         return t_res_activ, res_activ, hrf.BOLD
 
-    def generate_bold(self, TR=2, drop_first=12, clear_exc=True):
-        assert self.bold_input_ready, "You need to generate neural activity first"
-        self.TR = TR
-        bold_input = self.wc.boldInputTransform(self.wc['exc'])
-        self.boldModel = bold.BOLDModel(self.wc.params["N"], self.wc.params["dt"])
-        self.boldModel.samplingRate_NDt = int(round(TR * 1000 / self.boldModel.dt))
-        self.boldModel.run(bold_input, append=False)
-        self.BOLD = self.boldModel.BOLD[:, int(drop_first / TR):]
-        if clear_exc:
-            self.wc.outputs = dotdict({})
-            self.wc.state = dotdict({})
-            self.wc.exc = []
+    def generate_bold(self, bold_input, dt=5, TR=2, drop_first=12, normalize_max = 2,
+                      conv_type = 'BW',  **kwargs):
+        """
+        Generate bold signal on top of bold_input signal
+        Args:
+            bold_input (np.ndarry): with shape N rois vs time length, default excitation activity
+            TR (float): time repetition
+            drop_first (float): number of seconds droped after bold convolving
+            conv_type (string): how to convolve with neurolib or with gamma, possible values "BW" or "Gamma"
 
-    def generate_first_bold_chunkwise(self, TR=2, **kwargs):
+        Returns:
+            Convolved Bold signal
+
+        """
+
+        N = bold_input.shape[0]
+        hrf = HRF(N, dt=dt, TR=TR, normalize_input=True, normalize_max=normalize_max)
+        if conv_type=="BW":
+            hrf.bw_convolve(bold_input, append=False, **kwargs)
+        elif conv_type=="Gamma":
+            hrf.gamma_convolve(bold_input, append=False, **kwargs)
+        else:
+            NotImplementedError
+        drop_idxs = int(drop_first/TR)
+        return ( hrf.t_BOLD[drop_idxs:], hrf.BOLD[:,drop_idxs:])
+
+    def generate_first_bold_chunkwise(self, TR=2, input_type = 'exc', normalize_max = 2, **kwargs):
+        """
+
+        Args:
+            TR (float): Time Repetition
+            input_type (string):  'exc', 'sum' or "syn_act". Type of input bold activity
+            **kwargs:
+
+        Returns:
+
+        """
         self.TR = TR
         N = self.wc.params["N"]
         dt = self.wc.params["dt"]
         chunksize = TR * 1000 / dt
         used_last_idxs = int(self.wc['exc'].shape[1] - self.wc['exc'].shape[1] % chunksize)
-        bold_input = self.wc.boldInputTransform(self.wc['exc'])
+        if input_type=='exc':
+            bold_input = self.wc['exc']
+        elif input_type=='sum':
+            bold_input = self.wc['inh']+ self.wc['inh']
+        elif input_type=='syn_act':
+            bold_input  = self.generate_syn_act_series()
+        else:
+            NotImplementedError
+        self.input_rest = bold_input[:, used_last_idxs:]
         bold_input = bold_input[:, :used_last_idxs]
-        self.exc_rest = self.wc['exc'][:, used_last_idxs:]
-        self.hrf = HRF(N, dt=dt, TR=TR, normalize_input=False)
+
+        self.hrf = HRF(N, dt=dt, TR=TR, normalize_input=True, normalize_max=normalize_max)
         self.hrf.bw_convolve(bold_input, append=False, **kwargs)
-        # self.wc.boldModel = bold.BOLDModel(self.wc.params["N"], self.wc.params["dt"])
-        # self.wc.boldModel.samplingRate_NDt = int(round(TR * 1000 / self.wc.boldModel.dt))
-        # self.wc.boldModel.run(bold_input, append=False)
-        # self.BOLD = self.wc.boldModel.BOLD
-        # self.t_BOLD = self.wc.boldModel.t_BOLD
         self.BOLD = self.hrf.BOLD
         self.t_BOLD = self.hrf.t_BOLD
 
-    def generate_next_bold_chunkwise(self, **kwargs):
+    def generate_next_bold_chunkwise(self, input_type = 'exc', **kwargs):
         chunksize = self.TR * 1000 / self.wc.params["dt"]
-        new_exc = np.hstack((self.exc_rest, self.wc['exc']))
+        if input_type == 'exc':
+            new_exc = np.hstack((self.input_rest, self.wc['exc']))
+        elif input_type=='sum':
+            new_exc = np.hstack((self.input_rest, self.wc['exc']+ self.wc['inh']))
+        elif input_type=='syn_act':
+            new_exc = np.hstack((self.input_rest, self.generate_syn_act_series()))
+        else:
+            NotImplementedError
+
         if new_exc.shape[1] > chunksize:
             used_last_idxs = int(new_exc.shape[1] - new_exc.shape[1] % chunksize)
-            self.exc_rest = new_exc[:, used_last_idxs:]
-            bold_input = self.wc.boldInputTransform(new_exc[:, :used_last_idxs])
+            self.input_rest = new_exc[:, used_last_idxs:]
+            bold_input = new_exc[:, :used_last_idxs]
             # self.wc.boldModel.run(bold_input, append=True)
             self.hrf.bw_convolve(bold_input, append=True, **kwargs)
             self.BOLD = self.hrf.BOLD
             self.t_BOLD = self.hrf.t_BOLD
         else:
-            self.exc_rest = new_exc
+            self.input_rest = new_exc
 
     def draw_envelope_bold_compare(self, node_id=2,
                                    low_f=10, high_f=50, low_pass=None,
@@ -602,7 +741,7 @@ class HRF:
 
         self.idxLastT = self.idxLastT + activity.shape[1]
 
-    def _gamma_hrf(self, length=25, peak=6, undershoot=12, beta=0.35, scaling=0.6):
+    def _gamma_hrf(self, length=32, peak=6, undershoot=16, beta=0.1667, scaling=0.6):
         """ Return values for HRF at given times
 
         Args:
