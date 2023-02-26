@@ -327,8 +327,10 @@ class WCOnsetDesign:
         ie = self.wc.params['c_inhexc']
         ii = self.wc.params['c_inhinh']
 
-        exc = self.wc['exc']
-        sa = ee*self.wc['exc']+ei*self.wc['exc']+ie*self.wc['inh']+ii*self.wc['inh']+self.wc.Cmat@self.wc['exc']
+        #exc = self.wc['exc']
+        exc = self.wc.exc
+        inh = self.wc.inh
+        sa = ee*exc+ei*exc+ie*inh+ii*inh+self.wc.Cmat@exc
         return sa
 
 
@@ -446,7 +448,7 @@ class WCOnsetDesign:
         else:
             self.input_rest = new_exc
 
-    def draw_envelope_bold_compare(self, node_id=2,
+    def draw_envelope_bold_compare(self, node_id=2, series_name = 'sa_series',
                                    low_f=10, high_f=50, low_pass=None,
                                    drop_first_sec=7, shift_sec=4, plot_first=1, to_plot=True):
         
@@ -454,7 +456,7 @@ class WCOnsetDesign:
         TR = self.TR
         nyquist = 1 / a_s_rate / 2
         plot_first_dt = int(plot_first / a_s_rate)
-        raw_signal = self.activity["series"][node_id, :]
+        raw_signal = self.activity[series_name][node_id, :]
         high_band = high_f / nyquist
         low_band = low_f / nyquist
         b1, a1 = signal.butter(4, [low_band, high_band], btype='bandpass')
@@ -525,8 +527,8 @@ class WCOnsetDesign:
                 'bold_envelope': np.array([time, env_scaled_shifted[:sig_len], bold_scaled[:sig_len]]),
                 'filtered': np.array([emg_filtered[:plot_first_dt], hilbert_envelope[:plot_first_dt]])}
 
-    def compute_phase_diff(self, low_f=30, high_f=40, return_xr=True):
-        activity = self.activity['series']
+    def compute_phase_diff(self, series_name = 'sa_series', low_f=30, high_f=40, return_xr=True):
+        activity = self.activity[series_name]
         N_ROIs = activity.shape[0]
         s_rate = self.activity["sampling_rate"]
         coeff = 1 / s_rate

@@ -21,7 +21,7 @@ def read_onsets_from_input(mat_path):
 
 
 def read_generate_task_matrices(mat_path, num_regions, num_modules=3,
-                                sigma=0.1, norm_type="cols"):
+                                sigma=0.01, norm_type="cols"):
     """
     Generate task and rest matrices from mat file
     todo: description of mat file
