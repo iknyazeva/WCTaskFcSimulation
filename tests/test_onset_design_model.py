@@ -324,8 +324,9 @@ class TestWCOnsetDesign:
     def test_generate_local_activations(self):
         sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 6, "last_duration": 20}
         TR = 2
-        N_ROIs = 100
-        mat_path = "../data/01_BLOCK_[2s_TR]_[20s_DUR]_[10_BLOCKS]_MATRIXv29.mat"
+        N_ROIs = 30
+        #mat_path = "../data/01_BLOCK_[2s_TR]_[20s_DUR]_[10_BLOCKS]_MATRIXv29.mat"
+        mat_path = '../data/small_01_BLOCK.mat'
         bw_params = {"rho": 0.34, "alpha": 0.32, "V0": 0.02, "k1_mul": None,
                      "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
         wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)

@@ -335,7 +335,7 @@ class WCOnsetDesign:
 
 
 
-    def generate_local_activations(self, mat_path, act_scaling=0.5, **kwargs):
+    def generate_local_activations(self, mat_path, act_scaling=0.5, all_rois = True, **kwargs):
         N = self.wc.params["N"]
         first_rest = self.first_duration
         last_rest = self.last_duration
@@ -356,17 +356,27 @@ class WCOnsetDesign:
 
         for i in range(self.num_modules):
             if (activations_A[i]==1) and (activations_B[i]==1):
-                onsets.extend([onset_taskAB]*(N // self.num_modules))
+               #onsets.extend([onset_taskAB]*(N // self.num_modules))
+               onsets.extend([onset_taskAB])
             elif (activations_A[i]==1) and (activations_B[i]==0):
-                onsets.extend([onset_taskA] * (N // self.num_modules))
+                #onsets.extend([onset_taskA] * (N // self.num_modules))
+                onsets.extend([onset_taskA])
             else:
-                onsets.extend([onset_taskB] * (N // self.num_modules))
-        hrf = HRF(N, dt=dt, TR=TR, normalize_max=act_scaling)
+                #onsets.extend([onset_taskB] * (N // self.num_modules))
+                onsets.extend([onset_taskB])
+        #hrf = HRF(N, dt=dt, TR=TR, normalize_max=act_scaling)
+        hrf = HRF(self.num_modules, dt=dt, TR=TR, normalize_max=act_scaling)
         local_activation = hrf.create_task_design_activation(onsets, duration=task_duration,
                                                              first_rest=first_rest, last_rest=last_rest)
         hrf.bw_convolve(local_activation, append=False, **kwargs)
         t_res_activ, res_activ = hrf.resample_to_TR(local_activation)
-        return t_res_activ, res_activ, hrf.BOLD
+
+        if all_rois:
+            return t_res_activ, np.repeat(res_activ,
+                                          repeats=N // self.num_modules, axis=0), np.repeat(hrf.BOLD,
+                                                                                            repeats=N // self.num_modules, axis=0)
+        else:
+            return t_res_activ, res_activ, hrf.BOLD
 
     def generate_bold(self, bold_input, dt=5, TR=2, drop_first=12, normalize_max = 2,
                       conv_type = 'BW',  **kwargs):
