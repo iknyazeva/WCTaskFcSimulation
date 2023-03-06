@@ -19,9 +19,9 @@ class TestWCOnsetDesign:
         taskA_factors = np.array([[X, Z, 0.1], [Z, X, 0.1], [0.1, 0.1, X]])
         taskB_factors = np.array([[X, 0.1, Z], [0.1, X, 0.1], [Z, 0.1, X]])
 
-        C_rest = generate_modulars(num_regions, num_modules, sigma=0.1, factors=rest_factors)
-        C_taskA = generate_modulars(num_regions, num_modules, sigma=0.1, factors=taskA_factors)
-        C_taskB = generate_modulars(num_regions, num_modules, sigma=0.1, factors=taskB_factors)
+        C_rest = generate_modulars(num_regions, num_modules, factors=rest_factors, sigma=0.1)
+        C_taskA = generate_modulars(num_regions, num_modules, factors=taskA_factors, sigma=0.1)
+        C_taskB = generate_modulars(num_regions, num_modules, factors=taskB_factors, sigma=0.1)
         D = np.ones((num_regions, num_regions)) * 250
         np.fill_diagonal(D, 0)
         norm_type = "cols"
@@ -34,9 +34,9 @@ class TestWCOnsetDesign:
     def test_generate_from_mat_file(self):
         mat_path = '../data/SOTs_1.5s_duration.mat'
         C_rest, C_task_dict = read_generate_task_matrices(mat_path, 30, num_modules=3,
-                                                          sigma=0.1, norm_type="cols")
+                                                          sigma=0.1, norm_type="cols", gen_type='simple_prod')
         C_rest, C_task_dict = read_generate_task_matrices(mat_path, 30, num_modules=3,
-                                                          sigma=0.1, norm_type="raw")
+                                                          sigma=0.1, norm_type="raw", gen_type='simple_prod')
         assert True
 
     def test_init(self, c_test):
