@@ -237,7 +237,7 @@ class TestWCOnsetDesign:
         sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 6, "last_duration": 20}
         TR = 2
         a_s_rate = 5 * 1e-3  # sampling in s, original integration equal to 0.1 ms or 0.0001s
-        act_type = 'syn_act'
+        act_type = 'exc' #'syn_act'
         bw_params = {"rho": 0.34, "alpha": 0.32, "V0": 0.02, "k1_mul": None,
                      "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
         activity = True

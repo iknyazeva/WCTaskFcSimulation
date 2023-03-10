@@ -268,6 +268,8 @@ class WCOnsetDesign:
             chunksize = TR * 1000 / self.wc.params["dt"]
         if self.output_activation != 'exc':
             syn_act = True
+        else:
+            syn_act=False
         self._generate_first_rest(activity=activity, a_s_rate=a_s_rate, syn_act=syn_act)
 
 
