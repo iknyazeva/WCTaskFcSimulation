@@ -268,6 +268,8 @@ class WCOnsetDesign:
             chunksize = TR * 1000 / self.wc.params["dt"]
         if self.output_activation != 'exc':
             syn_act = True
+        else:
+            syn_act=False
         self._generate_first_rest(activity=activity, a_s_rate=a_s_rate, syn_act=syn_act)
 
 
@@ -543,7 +545,7 @@ class WCOnsetDesign:
         s_rate = self.activity["sampling_rate"]
         coeff = 1 / s_rate
         zero_shift = self.time_idxs_dict["Rest"][0][0]
-        len_tasks = int(coeff * (self.time_idxs_dict["Rest"][-1][1] - zero_shift))
+        len_tasks = np.ceil(coeff * (self.time_idxs_dict["Rest"][-1][1] - zero_shift))
         assert len_tasks == activity.shape[1], 'Computed length and series len should be equal'
         task_type = np.array(['Rest'] * int(len_tasks))
         trial_time_point = -1 + np.zeros(int(len_tasks), dtype=int)
