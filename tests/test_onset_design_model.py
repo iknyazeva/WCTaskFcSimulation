@@ -1,7 +1,7 @@
 import pytest
-from task_fc_simulation.onset_design_model import WCOnsetDesign, HRF
-from task_fc_simulation.weight_matrix_utils import normalize, generate_modulars
-from task_fc_simulation.read_utils import read_onsets_from_input, read_generate_task_matrices
+from tmfc_simulation.wilson_cowan_task_simulation import WCTaskSim, HRF
+from tmfc_simulation.synaptic_weights_matrices import normalize, generate_synaptic_weights_matrices
+from tmfc_simulation.read_utils import read_onsets_from_input, read_generate_task_matrices
 import numpy as np
 from scipy import stats
 import matplotlib.pyplot as plt
@@ -19,9 +19,9 @@ class TestWCOnsetDesign:
         taskA_factors = np.array([[X, Z, 0.1], [Z, X, 0.1], [0.1, 0.1, X]])
         taskB_factors = np.array([[X, 0.1, Z], [0.1, X, 0.1], [Z, 0.1, X]])
 
-        C_rest = generate_modulars(num_regions, num_modules, factors=rest_factors, sigma=0.1)
-        C_taskA = generate_modulars(num_regions, num_modules, factors=taskA_factors, sigma=0.1)
-        C_taskB = generate_modulars(num_regions, num_modules, factors=taskB_factors, sigma=0.1)
+        C_rest = generate_synaptic_weights_matrices(num_regions, num_modules, factors=rest_factors, sigma=0.1)
+        C_taskA = generate_synaptic_weights_matrices(num_regions, num_modules, factors=taskA_factors, sigma=0.1)
+        C_taskB = generate_synaptic_weights_matrices(num_regions, num_modules, factors=taskB_factors, sigma=0.1)
         D = np.ones((num_regions, num_regions)) * 250
         np.fill_diagonal(D, 0)
         norm_type = "cols"
@@ -41,48 +41,48 @@ class TestWCOnsetDesign:
 
     def test_init(self, c_test):
         C_task_dict, C_rest, D = c_test
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D)
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, onset_time_list=[1, 6], task_name_list=["task_A", "task_B"])
+        wc_block = WCTaskSim(C_task_dict, C_rest, D)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D, onset_time_list=[1, 6], task_name_list=["task_A", "task_B"])
         assert len(wc_block.onset_time_list) == 2
 
     def test_init_from_mat(self):
         mat_path = '../data/smallSOTs_1.5s_duration.mat'
 
         wc_params = {'inh_ext': 3, 'tau_ou': 15, 'append_outputs': True}
-        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=30, num_modules=3,
-                                                       rest_before=True, first_duration=6, last_duration=6,
-                                                       bold=False, **wc_params)
+        wc_block = WCTaskSim.from_matlab_structure(mat_path, num_regions=30, num_modules=3,
+                                                   rest_before=True, first_duration=6, last_duration=6,
+                                                   bold=False, **wc_params)
 
         assert True
 
     def test_generate_single_block(self, c_test):
         mat_path = '../data/smallSOTs_1.5s_duration.mat'
 
-        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=30, num_modules=3,
-                                                       rest_before=True, first_duration=2, last_duration=6,
-                                                       bold=True)
-        wc_block._generate_single_block(wc_block.C_rest, duration=1.5, activity=True, a_s_rate=20)
+        wc_block = WCTaskSim.from_matlab_structure(mat_path, num_regions=30, num_modules=3,
+                                                   rest_before=True, first_duration=2, last_duration=6,
+                                                   bold=True)
+        wc_block._generate_single_block(wc_block.Wij_rest, duration=1.5, activity=True, a_s_rate=20)
         # plt.plot(wc_block.wc.exc)
         # plt.plot(wc_block.wc.inh)
         # plt.show()
-        wc_block._generate_single_block(wc_block.C_rest, duration=1, activity=True, a_s_rate=20)
+        wc_block._generate_single_block(wc_block.Wij_rest, duration=1, activity=True, a_s_rate=20)
         assert len(wc_block.onset_time_list) == 1
 
     def test_generate_single_block_neurolib_bold(self, c_test):
         # option with built-in neurolib chunkwise bold
         C_task_dict, C_rest, D = c_test
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D,
-                                 onset_time_list=[12], duration_list=12, task_name_list=["task_A"],
-                                 append_outputs=False, bold=True, chunkwise=True)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D,
+                             onset_time_list=[12], duration_list=12, task_name_list=["task_A"],
+                             append_outputs=False, bold=True, chunkwise=True)
         wc_block._generate_single_block(C_rest, duration=12, activity=False)
         assert len(wc_block.wc.BOLD) == 2
         assert wc_block.BOLD is None
 
     def test_generate_single_block_bold_activity(self, c_test):
         C_task_dict, C_rest, D = c_test
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D,
-                                 onset_time_list=[2], duration_list=3, task_name_list=["task_A"],
-                                 append_outputs=False, bold=False, chunkwise=False)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D,
+                             onset_time_list=[2], duration_list=3, task_name_list=["task_A"],
+                             append_outputs=False, bold=False, chunkwise=False)
         wc_block._generate_single_block(C_rest, duration=12, activity=True, a_s_rate=5 * 1e-3)
 
         plt.plot(wc_block.activity['exc_series'][0, :200].T)
@@ -93,9 +93,9 @@ class TestWCOnsetDesign:
 
     def test_generate_single_block_bold_activity_sa(self, c_test):
         C_task_dict, C_rest, D = c_test
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D,
-                                 onset_time_list=[2], duration_list=3, task_name_list=["task_A"],
-                                 append_outputs=False, bold=False, chunkwise=False)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D,
+                             onset_time_list=[2], duration_list=3, task_name_list=["task_A"],
+                             append_outputs=False, bold=False, chunkwise=False)
         wc_block._generate_single_block(C_rest, duration=12, activity=True,
                                         a_s_rate=5 * 1e-3, syn_act=True)
 
@@ -124,9 +124,9 @@ class TestWCOnsetDesign:
 
     def test_generate_first_rest(self, c_test):
         C_task_dict, C_rest, D = c_test
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=True,
-                                 onset_time_list=[0.1], duration_list=6, task_name_list=["task_A"],
-                                 append_outputs=False, bold=False, chunkwise=False)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D, rest_before=True,
+                             onset_time_list=[0.1], duration_list=6, task_name_list=["task_A"],
+                             append_outputs=False, bold=False, chunkwise=False)
         wc_block._generate_first_rest(activity=True, a_s_rate=0.02, syn_act=True)
         plt.subplot(311);
         plt.plot(wc_block.activity['exc_series'][0, :200].T);
@@ -143,9 +143,9 @@ class TestWCOnsetDesign:
 
     def test_generate_full_series_one_task(self, c_test):
         C_task_dict, C_rest, D = c_test
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=True, first_duration=6,
-                                 onset_time_list=[1], duration_list=2, task_name_list=["task_A"],
-                                 append_outputs=True, last_duration=6, bold=False, chunkwise=False)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D, rest_before=True, first_duration=6,
+                             onset_time_list=[1], duration_list=2, task_name_list=["task_A"],
+                             append_outputs=True, last_duration=6, bold=False, chunkwise=False)
         wc_block.generate_full_series(bold_chunkwise=False,
                                       activity=True, a_s_rate=0.02, syn_act=True)
         plt.plot(wc_block.activity['exc_series'][1, :200].T)
@@ -156,9 +156,9 @@ class TestWCOnsetDesign:
     def test_generate_first_bold_chunkwise(self, c_test):
         C_task_dict, C_rest, D = c_test
         act_type = 'syn_act'
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=True, first_duration=14,
-                                 onset_time_list=[1], duration_list=6, task_name_list=["task_A"],
-                                 append_outputs=False, bold=False, chunkwise=False)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D, rest_before=True, first_duration=14,
+                             onset_time_list=[1], duration_list=6, task_name_list=["task_A"],
+                             append_outputs=False, bold=False, chunkwise=False)
         wc_block._generate_first_rest(activity=True, a_s_rate=0.02, syn_act=True)
         wc_block.generate_first_bold_chunkwise(TR=2, input_type=act_type, normalize_max=2)
         bold_exc = wc_block.BOLD[0, :]
@@ -168,9 +168,9 @@ class TestWCOnsetDesign:
     def test_generate_full_series_one_task_bold_chunkwise(self, c_test):
         C_task_dict, C_rest, D = c_test
         act_type = 'syn_act'
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=False,
-                                 onset_time_list=[2, 4.3], duration_list=[1, 1.5], task_name_list=["task_A", "task_B"],
-                                 append_outputs=False, last_duration=8, bold=False, chunkwise=False)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D, rest_before=False,
+                             onset_time_list=[2, 4.3], duration_list=[1, 1.5], task_name_list=["task_A", "task_B"],
+                             append_outputs=False, last_duration=8, bold=False, chunkwise=False)
         wc_block.generate_full_series(bold_chunkwise=True, TR=0.75, activity=True,
                                       a_s_rate=0.02, normalize_max=2, output_activation=act_type)
         assert len(wc_block.onset_time_list) == 2
@@ -178,10 +178,10 @@ class TestWCOnsetDesign:
     def test_generate_full_series_two_task(self, c_test):
         C_task_dict, C_rest, D = c_test
         act_type = 'syn_act'
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=True, first_duration=4,
-                                 onset_time_list=[0.01, 3.76, 6.01, 8.13], duration_list=1.5,
-                                 task_name_list=["task_A", "task_B", "task_A", "task_A"],
-                                 last_duration=4)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D, rest_before=True, first_duration=4,
+                             onset_time_list=[0.01, 3.76, 6.01, 8.13], duration_list=1.5,
+                             task_name_list=["task_A", "task_B", "task_A", "task_A"],
+                             last_duration=4)
         wc_block.generate_full_series(TR=1, activity=True,
                                       a_s_rate=0.02, normalize_max=2, output_activation=act_type)
         assert len(wc_block.onset_time_list) == 1
@@ -189,10 +189,10 @@ class TestWCOnsetDesign:
     def test_generate_full_series_two_task_bold_chunkwise(self, c_test):
         C_task_dict, C_rest, D = c_test
         act_type = 'syn_act'
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=True, first_duration=6,
-                                 onset_time_list=[0.01, 3.76, 6.01, 8.13], duration_list=1.5,
-                                 task_name_list=["task_A", "task_B", "task_A", "task_A"],
-                                 last_duration=4, append_outputs=False, bold=False)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D, rest_before=True, first_duration=6,
+                             onset_time_list=[0.01, 3.76, 6.01, 8.13], duration_list=1.5,
+                             task_name_list=["task_A", "task_B", "task_A", "task_A"],
+                             last_duration=4, append_outputs=False, bold=False)
         wc_block.generate_full_series(bold_chunkwise=True, TR=0.75, activity=True,
                                       a_s_rate=0.02, normalize_max=2, output_activation=act_type)
         assert len(wc_block.onset_time_list) == 4
@@ -200,10 +200,10 @@ class TestWCOnsetDesign:
     def test_generate_bold_on_activations(self, c_test):
         C_task_dict, C_rest, D = c_test
         act_type = 'syn_act'
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=True, first_duration=12,
-                                 onset_time_list=[0.01, 3.76, 6.01, 8.13], duration_list=3,
-                                 task_name_list=["task_A", "task_B", "task_A", "task_A"],
-                                 last_duration=6, append_outputs=False, bold=False)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D, rest_before=True, first_duration=12,
+                             onset_time_list=[0.01, 3.76, 6.01, 8.13], duration_list=3,
+                             task_name_list=["task_A", "task_B", "task_A", "task_A"],
+                             last_duration=6, append_outputs=False, bold=False)
         wc_block.generate_full_series(bold_chunkwise=True, TR=0.75, activity=True,
                                       a_s_rate=0.005, normalize_max=2, output_activation=act_type)
         bold_input = wc_block.activity['sa_series']
@@ -242,11 +242,11 @@ class TestWCOnsetDesign:
                      "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
         activity = True
 
-        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=N_ROIs,
-                                                       **wc_params, **sim_parameters)
+        wc_block = WCTaskSim.from_matlab_structure(mat_path, num_regions=N_ROIs,
+                                                   **wc_params, **sim_parameters)
         wc_block.generate_full_series(TR=TR, activity=activity, a_s_rate=a_s_rate,
                                       normalize_max=2, output_activation=act_type, **bw_params)
-        t_coactiv, coactiv, bold_coactiv = wc_block.generate_local_activations(mat_path, act_scaling=0.5, **bw_params)
+        t_coactiv, coactiv, bold_coactiv = wc_block.generate_coactivations(mat_path, act_scaling=0.5, **bw_params)
         assert True
 
     def test_generate_simple_block_design(self, c_test):
@@ -254,10 +254,10 @@ class TestWCOnsetDesign:
         onset_time_list = [16, 54]
         duration_list = [24, 32]
         task_names_list = ["task_A", "task_B"]
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=False,
-                                 onset_time_list=onset_time_list, duration_list=duration_list,
-                                 task_name_list=task_names_list,
-                                 last_duration=16, append_outputs=False, bold=True)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D, rest_before=False,
+                             onset_time_list=onset_time_list, duration_list=duration_list,
+                             task_name_list=task_names_list,
+                             last_duration=16, append_outputs=False, bold=True)
         wc_block.generate_full_series()
         assert True
 
@@ -274,18 +274,18 @@ class TestWCOnsetDesign:
         small_task_names_list = task_names_list[:6]
         small_duration_list = duration_list[:6]
 
-        wc_block = WCOnsetDesign(C_task_dict, C_rest, D, rest_before=False,
-                                 onset_time_list=small_onset_time_list, duration_list=small_duration_list,
-                                 task_name_list=small_task_names_list,
-                                 last_duration=16, append_outputs=True, bold=False)
+        wc_block = WCTaskSim(C_task_dict, C_rest, D, rest_before=False,
+                             onset_time_list=small_onset_time_list, duration_list=small_duration_list,
+                             task_name_list=small_task_names_list,
+                             last_duration=16, append_outputs=True, bold=False)
         wc_block.generate_full_series()
         assert True
 
     def test_init_from_matlab_structure(self):
         num_regions = 30
         mat_path = '../data/test_input.mat'
-        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=num_regions,
-                                                       rest_before=True, first_duration=6, last_duration=6)
+        wc_block = WCTaskSim.from_matlab_structure(mat_path, num_regions=num_regions,
+                                                   rest_before=True, first_duration=6, last_duration=6)
         wc_block.generate_full_series()
         wc_block.generate_bold(TR=2, drop_first=6, clear_exc=True)
         assert True
@@ -300,7 +300,7 @@ class TestWCOnsetDesign:
         bw_params = {"rho": 0.34, "alpha": 0.32, "V0": 0.02, "k1_mul": None,
                      "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
         mat_path = '../data/smallSOTs_1.5s_duration.mat'
-        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)
+        wc_block = WCTaskSim.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)
         wc_block.generate_full_series(TR=TR, activity=activity, a_s_rate=a_s_rate, **bw_params)
 
         wc_block.draw_envelope_bold_compare(node_id=2, low_f=10, high_f=50, low_pass=10,
@@ -315,7 +315,7 @@ class TestWCOnsetDesign:
         activity = True
         # see notebook HRFConvolution for parameters description
         mat_path = '../data/small10SOTs_1.5s_duration.mat'
-        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)
+        wc_block = WCTaskSim.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)
         wc_block.generate_full_series(TR=TR, activity=activity, a_s_rate=a_s_rate)
         act_dict = wc_block.compute_phase_diff(low_f=30, high_f=40)
 
@@ -329,9 +329,9 @@ class TestWCOnsetDesign:
         mat_path = '../data/small_01_BLOCK.mat'
         bw_params = {"rho": 0.34, "alpha": 0.32, "V0": 0.02, "k1_mul": None,
                      "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
-        wc_block = WCOnsetDesign.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)
+        wc_block = WCTaskSim.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)
         wc_block.TR = 2
-        t_coactiv, coactiv, bold_coactiv = wc_block.generate_local_activations(mat_path, act_scaling=0.5, **bw_params)
+        t_coactiv, coactiv, bold_coactiv = wc_block.generate_coactivations(mat_path, act_scaling=0.5, **bw_params)
 
         assert True
 

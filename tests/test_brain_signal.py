@@ -1,6 +1,6 @@
 import pytest
 import xarray as xr
-from task_fc_simulation.brain_signal import BrainSignal
+from tmfc_simulation.brain_signal import BrainSignal
 
 import numpy as np
 import matplotlib.pyplot as plt

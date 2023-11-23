@@ -2,7 +2,7 @@ import pytest
 import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
-from task_fc_simulation.cole2019model import NeuralMassModel
+from tmfc_simulation.cole2019model import NeuralMassModel
 
 
 class TestNeuralMassModel:

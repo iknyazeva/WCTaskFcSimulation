@@ -1,5 +1,4 @@
-import pytest
-from task_fc_simulation.weight_matrix_utils import generate_modulars
+from tmfc_simulation.synaptic_weights_matrices import generate_synaptic_weights_matrices
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -12,8 +11,8 @@ def test_generate_modulars():
     sigma = 0.01
     #gen_type = 'simple_prod'
     gen_type = 'equal_var'
-    weight_matrix_A, stats_A = generate_modulars(100, 4, factors=factors_A, sigma=sigma, return_stats=True, gen_type=gen_type)
-    weight_matrix_B, stats_B = generate_modulars(100, 4, factors=factors_B, sigma=sigma, return_stats=True, gen_type=gen_type)
+    weight_matrix_A, stats_A = generate_synaptic_weights_matrices(100, 4, factors=factors_A, sigma=sigma, return_stats=True, gen_type=gen_type)
+    weight_matrix_B, stats_B = generate_synaptic_weights_matrices(100, 4, factors=factors_B, sigma=sigma, return_stats=True, gen_type=gen_type)
     diff = weight_matrix_A-weight_matrix_B
     plt.subplot(131); plt.imshow(weight_matrix_A)
     plt.subplot(132);plt.imshow(weight_matrix_B)

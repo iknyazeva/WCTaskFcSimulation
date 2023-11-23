@@ -5,27 +5,27 @@ import matplotlib.pyplot as plt
 from neurolib.models.wc import WCModel
 from neurolib.utils.collections import dotdict
 from neurolib.models import bold
-from task_fc_simulation.boldIntegration import simulateBOLD
-from task_fc_simulation.read_utils import read_generate_task_matrices, read_onsets_from_input
+from tmfc_simulation.boldIntegration import simulateBOLD
+from tmfc_simulation.read_utils import read_generate_task_matrices, read_onsets_from_input
 import numpy as np
 
 
-class WCOnsetDesign:
+class WCTaskSim:
     """  class for simulation block design fMRI with WC model, with the own matrix synaptic matrix for each state
         with predefined onset times
     """
 
     #todo Add output activations and description
 
-    def __init__(self, C_task_dict, C_rest, D, onset_time_list=None, task_name_list=None, duration_list=3,
+    def __init__(self, Wij_task_dict, Wij_rest, D, onset_time_list=None, task_name_list=None, duration_list=3,
                  rest_before=True, first_duration=6, last_duration=8, append_outputs=False, bold=False,
                  chunkwise=False, num_modules=3,
                  exc_ext=0.75, K_gl=2.85, sigma_ou=5 * 1e-3, **kwargs):
         """
 
         Args:
-            C_task_dict (dict): dictionary with the matrices for all tasks used in experiment
-            C_rest (np.ndarray): matrix of synaptic weight for rest
+            Wij_task_dict (dict): dictionary with the matrices for all tasks used in experiment
+            Wij_rest (np.ndarray): matrix of synaptic weight for rest
             D (np.ndarray): delay matrix
             onset_time_list (list): list with the start time for the tasks
             task_name_list (list): name of the task to start
@@ -53,14 +53,14 @@ class WCOnsetDesign:
         self.t_BOLD = None
         self.output_activation = None
         self.rest_before = rest_before
-        self.C_rest = C_rest
-        self.wc = WCModel(Cmat=self.C_rest, Dmat=self.Dmat)
-        self.C_task_dict = C_task_dict
-        self.num_tasks = len(C_task_dict.keys())
+        self.Wij_rest = Wij_rest
+        self.wc = WCModel(Cmat=self.Wij_rest, Dmat=self.Dmat)
+        self.Wij_task_dict = Wij_task_dict
+        self.num_tasks = len(Wij_task_dict.keys())
         if task_name_list is None:
-            task_name_list = list(C_task_dict.keys())
+            task_name_list = list(Wij_task_dict.keys())
         self.task_name_list = task_name_list
-        assert sum([task_name in C_task_dict.keys() for task_name in task_name_list]) == len(
+        assert sum([task_name in Wij_task_dict.keys() for task_name in task_name_list]) == len(
             task_name_list), "Name in task names not from the dict"
         if onset_time_list is None:
             self.onset_time_list = list(np.arange(len(self.task_name_list)))
@@ -91,7 +91,7 @@ class WCOnsetDesign:
         self.last_duration = last_duration
         self.first_duration = first_duration
         time_idxs_dict = {"Rest": []}
-        time_idxs_dict.update({key: [] for key in self.C_task_dict.keys()})
+        time_idxs_dict.update({key: [] for key in self.Wij_task_dict.keys()})
         self.time_idxs_dict = time_idxs_dict
         self.num_modules = num_modules
 
@@ -175,7 +175,7 @@ class WCOnsetDesign:
         self.wc.params['duration'] = duration * 1000  # duration in ms
         self.wc.run(append_outputs=self.append_outputs, bold=self.bold, continue_run=True, chunkwise=self.chunkwise)
         if syn_act:
-            syn_act_series = self.generate_syn_act_series()
+            syn_act_series = self.generate_neuronal_oscill()
         #if not self.chunkwise and activity:
         if activity:
             idx_last_t = self.activity["idx_last_t"]
@@ -221,14 +221,14 @@ class WCOnsetDesign:
             start_time_rest = 0
             duration = self.onset_time_list[0]
             end_time_rest = self.onset_time_list[0]
-        Cmat = self.C_rest
+        Cmat = self.Wij_rest
         self._generate_single_block(Cmat, duration=duration,
                                     activity=activity, a_s_rate=a_s_rate, syn_act=syn_act)
         self.time_idxs_dict["Rest"].append([round(start_time_rest, 3), round(end_time_rest, 3)])
 
     def _generate_last_rest(self, activity=True, a_s_rate=0.02, syn_act=True):
         start_time_rest = self.onset_time_list[-1] + self.duration_list[-1]
-        Cmat = self.C_rest
+        Cmat = self.Wij_rest
         # set last rest duration equal to previous gap between onset times
         duration = self.last_duration
         end_time_rest = start_time_rest + duration
@@ -280,7 +280,7 @@ class WCOnsetDesign:
 
         for i in range(len(self.onset_time_list)):
             task_name = self.task_name_list[i]
-            Cmat = self.C_task_dict[task_name]
+            Cmat = self.Wij_task_dict[task_name]
             onset_time = self.onset_time_list[i]
             duration = self.duration_list[i]
             start_time_block = onset_time
@@ -293,7 +293,7 @@ class WCOnsetDesign:
             if i < len(self.onset_time_list) - 1:
                 duration = self.onset_time_list[i + 1] - self.onset_time_list[i] - self.duration_list[i]
                 if duration > 0:
-                    Cmat = self.C_rest
+                    Cmat = self.Wij_rest
                     start_time_rest = self.onset_time_list[i] + self.duration_list[i]
                     end_time_rest = self.onset_time_list[i + 1]
                     self._generate_single_block(Cmat, duration=duration,
@@ -313,7 +313,7 @@ class WCOnsetDesign:
             self.wc.outputs = dotdict()
             self.wc.state = dotdict()
 
-    def generate_syn_act_series(self):
+    def generate_neuronal_oscill(self):
         """ function for computing integrated synaptic activity (without integration over 50ms)
         as described in Horwitz and Tagamets (1999)
         IN = wEE*E + WEI*E+WIE*IE +C*E
@@ -337,7 +337,7 @@ class WCOnsetDesign:
 
 
 
-    def generate_local_activations(self, mat_path, act_scaling=0.5, all_rois = True, **kwargs):
+    def generate_coactivations(self, mat_path, act_scaling=0.5, all_rois = True, **kwargs):
         N = self.wc.params["N"]
         first_rest = self.first_duration
         last_rest = self.last_duration
@@ -427,7 +427,7 @@ class WCOnsetDesign:
         elif input_type=='sum':
             bold_input = self.wc['inh']+ self.wc['inh']
         elif input_type=='syn_act':
-            bold_input  = self.generate_syn_act_series()
+            bold_input  = self.generate_neuronal_oscill()
         else:
             NotImplementedError
         self.input_rest = bold_input[:, used_last_idxs:]
@@ -445,7 +445,7 @@ class WCOnsetDesign:
         elif input_type=='sum':
             new_exc = np.hstack((self.input_rest, self.wc['exc']+ self.wc['inh']))
         elif input_type=='syn_act':
-            new_exc = np.hstack((self.input_rest, self.generate_syn_act_series()))
+            new_exc = np.hstack((self.input_rest, self.generate_neuronal_oscill()))
         else:
             NotImplementedError
 

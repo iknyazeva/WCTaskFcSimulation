@@ -1,8 +1,8 @@
 import numpy as np
 
 
-def generate_modulars(num_regions, num_modules, num_regions_per_modules=None,
-                      factors=None, sigma=0.01, return_stats=False, gen_type='simple_prod'):
+def generate_synaptic_weights_matrices(num_regions, num_modules, num_regions_per_modules=None,
+                                       factors=None, sigma=0.01, return_stats=False, gen_type='simple_prod'):
     """Function for generation of matrix with different module structure. Construction of the synaptic weight matrices
      involved three steps. First, synaptic weights (wji) were drawn from a Gaussian distribution (mean of 1,
      standard deviation of sigma) for each subject.

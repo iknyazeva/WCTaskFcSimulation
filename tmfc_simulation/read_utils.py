@@ -1,5 +1,5 @@
 from scipy import io
-from task_fc_simulation.weight_matrix_utils import normalize, generate_modulars
+from tmfc_simulation.synaptic_weights_matrices import normalize, generate_synaptic_weights_matrices
 import numpy as np
 
 
@@ -37,13 +37,13 @@ def read_generate_task_matrices(mat_path, num_regions, num_modules=3,
     rest_factors = coeff_rest_matrix[0, 0]
     C_task_list = []
     for i in range(num_tasks):
-        C_task = generate_modulars(num_regions, num_modules, factors=coeff_task_matrices[0, i],
-                                   sigma=sigma, gen_type=gen_type)
+        C_task = generate_synaptic_weights_matrices(num_regions, num_modules, factors=coeff_task_matrices[0, i],
+                                                    sigma=sigma, gen_type=gen_type)
         C_task = normalize(C_task, norm_type=norm_type)
         C_task_list.append(C_task)
 
-    C_rest = generate_modulars(num_regions, num_modules, factors=rest_factors,
-                               sigma=sigma, gen_type=gen_type)
+    C_rest = generate_synaptic_weights_matrices(num_regions, num_modules, factors=rest_factors,
+                                                sigma=sigma, gen_type=gen_type)
     C_rest = normalize(C_rest, norm_type=norm_type)
     C_task_dict = dict(zip(names, C_task_list))
 
