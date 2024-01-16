@@ -6,7 +6,8 @@ import numpy.typing as npt
 def generate_synaptic_weights_matrices(
         num_regions: int, num_modules: int,
         num_regions_per_modules: Optional[list] = None,
-        factors: list[npt.NDArray] = None, sigma: float = 0.01,
+        factors: Optional[npt.NDArray] = None,
+        sigma: float = 0.01,
         return_stats: bool = False,
         gen_type: str =
         'simple_prod') -> Union[npt.NDArray, list[npt.NDArray, dict]]:
