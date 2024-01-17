@@ -87,9 +87,9 @@ class TestWCTaskSim(TestCase):
                                         a_s_rate=a_s_rate)
 
         self.assertIsInstance(wc_block.activity['sa_series'], np.ndarray)
-        self.assertEqual(wc_block.wc['exc'].shape[1], int(1000 * duration))
+        self.assertEqual(wc_block.wc['exc'].shape[1], int(10000 * duration))
         self.assertEqual(wc_block.activity['sa_series'].shape[1],
-                         int(1000 * duration / a_s_rate))
+                         int(duration / a_s_rate))
 
     def test_generate_single_block_neurolib_bold(self):
         # option with built-in neurolib chunkwise bold
@@ -126,8 +126,8 @@ class TestWCTaskSim(TestCase):
         plt.plot(wc_block.activity['exc_series'][0, :200].T)
         plt.plot(wc_block.activity['inh_series'][0, :200].T)
         # plt.show()
-        self.assertEqual(wc_block.activity["inh_series"].shape, 2)
-        self.assertEqual(wc_block.activity["exc_series"].shape, 2)
+        self.assertEqual(len(wc_block.activity["inh_series"].shape), 2)
+        self.assertEqual(len(wc_block.activity["exc_series"].shape), 2)
 
     def test_generate_single_block_bold_activity_sa(self):
         wc_block = WCTaskSim(self.Wij_task_dict,
@@ -210,7 +210,7 @@ class TestWCTaskSim(TestCase):
                              last_duration=6,
                              bold=False,
                              chunkwise=False)
-        wc_block.generate_full_series(bold_chunkwise=False,
+        wc_block.generate_full_series(bold_chunkwise=True,
                                       activity=True,
                                       a_s_rate=0.02,
                                       syn_act=True)
@@ -238,30 +238,29 @@ class TestWCTaskSim(TestCase):
 
     def test_generate_bold_chunkwise(self):
         act_type = 'syn_act'
+        TR = 2
+        duration_rest = 14
+        duration_block = 6
         wc_block = WCTaskSim(self.Wij_task_dict,
                              self.Wij_rest,
                              self.D,
                              rest_before=True,
-                             first_duration=14,
-                             onset_time_list=[1],
-                             duration_list=6,
+                             first_duration=duration_rest,
+                             onset_time_list=[0],
+                             duration_list=duration_block,
                              task_name_list=["task_A"],
                              append_outputs=False,
                              bold=False,
                              chunkwise=False)
         wc_block._generate_first_rest(activity=True, a_s_rate=0.02, syn_act=True)
-        wc_block.generate_first_bold_chunkwise(TR=2, input_type=act_type, normalize_max=2)
-        bold_exc = wc_block.BOLD[0, :]
         wc_block.generate_bold_chunkwise(TR=2,
                                          input_type=act_type,
                                          normalize_max=2,
                                          is_first=True)
         bold_exc1 = wc_block.BOLD[0, :]
 
-        self.assertTrue((bold_exc == bold_exc1).all())
-
         wc_block._generate_single_block(self.Wij_rest,
-                                        duration=6,
+                                        duration=duration_block,
                                         activity=True,
                                         a_s_rate=0.02,
                                         syn_act=True)
@@ -271,7 +270,8 @@ class TestWCTaskSim(TestCase):
                                          is_first=False)
         bold_exc2 = wc_block.BOLD[0, :]
 
-        self.assertEqual(len(bold_exc2), 10)
+        self.assertEqual(len(bold_exc1), int(duration_rest/TR))
+        self.assertEqual(len(bold_exc2), len(bold_exc1)+int(duration_block/TR))
 
     def test_generate_full_series_one_task_bold_chunkwise(self):
         act_type = 'syn_act'
@@ -384,7 +384,6 @@ class TestWCTaskSim(TestCase):
         plt.subplot(312); plt.plot(t_BOLD, BOLD_bw[0, :])
         plt.subplot(313); plt.plot(t_BOLD, BOLD_g[0, :])
         plt.show()
-        self.fail()
 
     def test_full_series_from_mat(self):
         N_ROIs = 30

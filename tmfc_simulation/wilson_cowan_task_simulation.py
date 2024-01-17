@@ -623,59 +623,6 @@ class WCTaskSim:
         else:
             self.input_rest = new_exc
 
-    def generate_first_bold_chunkwise(self,
-                                      TR=2,
-                                      input_type='exc',
-                                      normalize_max=2,
-                                      **kwargs):
-        """
-        Args:
-            TR (float): Time Repetition
-            input_type (string):  'exc', 'sum' or "syn_act". Type of input bold activity
-            **kwargs: hrf class kwargs
-        """
-        self.TR = TR
-        N = self.wc.params["N"]
-        dt = self.wc.params["dt"]
-        chunksize = TR * 1000 / dt
-        used_last_idxs = int(self.wc['exc'].shape[1] - self.wc['exc'].shape[1] % chunksize)
-        if input_type == 'exc':
-            bold_input = self.wc['exc']
-        elif input_type == 'sum':
-            bold_input = self.wc['exc'] + self.wc['inh']
-        elif input_type == 'syn_act':
-            bold_input = self.generate_neuronal_oscill()
-        else:
-            NotImplementedError
-        self.input_rest = bold_input[:, used_last_idxs:]
-        bold_input = bold_input[:, :used_last_idxs]
-
-        self.hrf = HRF(N, dt=dt, TR=TR, normalize_input=True, normalize_max=normalize_max)
-        self.hrf.bw_convolve(bold_input, append=False, **kwargs)
-        self.BOLD = self.hrf.BOLD
-        self.t_BOLD = self.hrf.t_BOLD
-
-    def generate_next_bold_chunkwise(self, input_type='exc', **kwargs):
-        chunksize = self.TR * 1000 / self.wc.params["dt"]
-        if input_type == 'exc':
-            new_exc = np.hstack((self.input_rest, self.wc['exc']))
-        elif input_type == 'sum':
-            new_exc = np.hstack((self.input_rest, self.wc['exc'] + self.wc['inh']))
-        elif input_type == 'syn_act':
-            new_exc = np.hstack((self.input_rest, self.generate_neuronal_oscill()))
-        else:
-            NotImplementedError
-
-        if new_exc.shape[1] > chunksize:
-            used_last_idxs = int(new_exc.shape[1] - new_exc.shape[1] % chunksize)
-            self.input_rest = new_exc[:, used_last_idxs:]
-            bold_input = new_exc[:, :used_last_idxs]
-            # self.wc.boldModel.run(bold_input, append=True)
-            self.hrf.bw_convolve(bold_input, append=True, **kwargs)
-            self.BOLD = self.hrf.BOLD
-            self.t_BOLD = self.hrf.t_BOLD
-        else:
-            self.input_rest = new_exc
 
     def draw_envelope_bold_compare(self, node_id=2, series_name='sa_series',
                                    low_f=10, high_f=50, low_pass=None,
@@ -850,8 +797,6 @@ def normalize(signal):
     std_ = np.std(signal, axis=1).reshape(-1, 1)
     return (signal - mean_) / std_
 
-    # toDO соединить в блок
-
 
 class HRF:
     """
@@ -928,10 +873,12 @@ class HRF:
             resampled to TR signal
         """
         signal_resampled = signal[:,
-                           self.samplingRate_NDt - np.mod(idxLastT - 1, self.samplingRate_NDt):: self.samplingRate_NDt]
+                           self.samplingRate_NDt - np.mod(idxLastT - 1,
+                                                          self.samplingRate_NDt):: self.samplingRate_NDt]
         t_new_idx = idxLastT + np.arange(signal.shape[1])
         t_resampled = (
-                t_new_idx[self.samplingRate_NDt - np.mod(idxLastT - 1, self.samplingRate_NDt):: self.samplingRate_NDt]
+                t_new_idx[self.samplingRate_NDt - np.mod(idxLastT - 1,
+                                                         self.samplingRate_NDt):: self.samplingRate_NDt]
                 * self.dt
         )
         return t_resampled, signal_resampled
@@ -988,7 +935,8 @@ class HRF:
         t_new_idx = self.idxLastT + np.arange(activity.shape[1])
         t_BOLD_resampled = (
                 t_new_idx[
-                self.samplingRate_NDt - np.mod(self.idxLastT - 1, self.samplingRate_NDt):: self.samplingRate_NDt]
+                self.samplingRate_NDt - np.mod(self.idxLastT - 1,
+                                               self.samplingRate_NDt):: self.samplingRate_NDt]
                 * self.dt
         )
 
