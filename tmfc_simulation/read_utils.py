@@ -1,6 +1,7 @@
 from scipy import io
 from .synaptic_weights_matrices import normalize
 from .synaptic_weights_matrices import generate_synaptic_weights_matrices
+from typing import Optional
 
 
 def read_onsets_from_mat(mat_path: str) -> tuple[list, list, list]:
@@ -48,6 +49,7 @@ def read_onsets_from_mat(mat_path: str) -> tuple[list, list, list]:
 def generate_sw_matrices_from_mat(mat_path: str,
                                   num_regions: int,
                                   num_modules: int = 3,
+                                  num_regions_per_modules: Optional[list] = None,
                                   sigma: float = 0.01,
                                   norm_type: str = "cols",
                                   gen_type: str = 'simple_prod'):
@@ -81,6 +83,7 @@ def generate_sw_matrices_from_mat(mat_path: str,
 
     return: rest matrix and list of task matrices
     """
+    # TODO add num regions per module
     input_data = io.loadmat(mat_path)
     coeff_rest_matrix = input_data["rest_matrix"]
     coeff_task_matrices = input_data["task_matrices"]
@@ -93,6 +96,7 @@ def generate_sw_matrices_from_mat(mat_path: str,
     for i in range(num_tasks):
         Wij_task = generate_synaptic_weights_matrices(num_regions,
                                                       num_modules,
+                                                      num_regions_per_modules,
                                                       factors=coeff_task_matrices[0, i],
                                                       sigma=sigma,
                                                       gen_type=gen_type)
@@ -102,6 +106,7 @@ def generate_sw_matrices_from_mat(mat_path: str,
 
     Wij_rest = generate_synaptic_weights_matrices(num_regions,
                                                   num_modules,
+                                                  num_regions_per_modules,
                                                   factors=rest_factors,
                                                   sigma=sigma,
                                                   gen_type=gen_type)

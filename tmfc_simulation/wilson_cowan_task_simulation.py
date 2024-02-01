@@ -9,6 +9,9 @@ from .read_utils import read_onsets_from_mat
 import numpy as np
 from typing import Optional, Union
 import numpy.typing as npt
+from .task_utils import (create_task_design_activation,
+                         create_reg_activations,
+                        create_activations_per_module)
 
 
 class WCTaskSim:
@@ -135,6 +138,7 @@ class WCTaskSim:
         time_idxs_dict.update({key: [] for key in self.Wij_task_dict.keys()})
         self.time_idxs_dict = time_idxs_dict
         self.num_modules = num_modules
+        self.num_regions_per_modules = None
 
         kw_defaults = {'inh_ext': 0,
                        'tau_ou': 5,
@@ -186,6 +190,7 @@ class WCTaskSim:
                               norm_type: str = 'cols',
                               num_regions: int = 30,
                               num_modules: int = 3,
+                              num_regions_per_modules: Optional[list[int]] =None,
                               gen_type: str = 'simple_prod',
                               bold: bool = False,
                               chunkwise: bool = False,
@@ -224,11 +229,16 @@ class WCTaskSim:
         :param sigma_ou:
         :param kwargs:
         :return:
+
+        Args:
+            num_regions_per_modules:
         """
         cls.num_modules = num_modules
+        cls.num_regions_per_modules = num_regions_per_modules
         Wij_rest, Wij_task_dict = generate_sw_matrices_from_mat(mat_path,
                                                                 num_regions,
                                                                 num_modules,
+                                                                num_regions_per_modules,
                                                                 sigma=sigma,
                                                                 gen_type=gen_type,
                                                                 norm_type=norm_type)
@@ -519,6 +529,59 @@ class WCTaskSim:
         sa = ee * exc + ei * exc + ie * inh + ii * inh + self.wc.Cmat @ exc
         return sa
 
+    def generate_coactivation_by_mat(self,
+                                     mat_path,
+                                     act_scaling,
+                                     **kwargs):
+        """
+        Generate outer activation for each node defined with a tasks and activation info, where
+        written which model sensitive to which task. All information defined in mat file
+        with the description of  tasks, onsets, durations and activation info for each modules
+
+        Args:
+            mat_path (str): path to matfile
+            act_scaling (float): scaling factor for hrf function
+            **kwargs : kwargs for HRF class
+
+        Returns:
+
+        """
+
+        num_regions = self.wc.params["N"]
+        num_regions_per_modules = self.num_regions_per_modules
+        first_rest = self.first_duration
+        last_rest = self.last_duration
+        TR = self.TR
+        dt = self.wc.params["dt"]
+        input_data = io.loadmat(mat_path)
+        num_tasks = input_data['onsets'].shape[1]
+        onsets_list = []
+        activations = []
+        durations_list = []
+        for i in range(num_tasks):
+            onsets_list.append(list(input_data['onsets'][0, i].squeeze()))
+            activations.append(input_data['activations'][0, i].squeeze())
+            durations_list.append(input_data["durations"][0, i].squeeze())
+
+        box_car_activations = create_task_design_activation(onsets_list,
+                                                            durations_list,
+                                                            dt,
+                                                            first_rest=first_rest,
+                                                            last_rest=last_rest)
+        activations_by_module = create_activations_per_module(activations,
+                                                              box_car_activations)
+        hrf = HRF(self.num_modules, dt=dt, TR=TR, normalize_max=act_scaling)
+        hrf.bw_convolve(activations_by_module, append=False, **kwargs)
+        t_res_activ, res_activ = hrf.resample_to_TR(activations_by_module)
+
+        res_activ = create_reg_activations(res_activ,
+                                           num_regions,
+                                           num_regions_per_modules)
+        convolved_activ = create_reg_activations(hrf.BOLD, num_regions)
+        return t_res_activ, res_activ, convolved_activ
+
+
+
     def generate_coactivations(self,
                                mat_path,
                                act_scaling=0.5,
@@ -554,8 +617,10 @@ class WCTaskSim:
                 onsets.extend([onset_taskB])
         # hrf = HRF(N, dt=dt, TR=TR, normalize_max=act_scaling)
         hrf = HRF(self.num_modules, dt=dt, TR=TR, normalize_max=act_scaling)
-        local_activation = hrf.create_task_design_activation(onsets, duration=task_duration,
-                                                             first_rest=first_rest, last_rest=last_rest)
+        local_activation = hrf.create_task_design_activation(onsets,
+                                                             duration=task_duration,
+                                                             first_rest=first_rest,
+                                                             last_rest=last_rest)
         hrf.bw_convolve(local_activation, append=False, **kwargs)
         t_res_activ, res_activ = hrf.resample_to_TR(local_activation)
 
@@ -622,7 +687,6 @@ class WCTaskSim:
             self.t_BOLD = self.hrf.t_BOLD
         else:
             self.input_rest = new_exc
-
 
     def draw_envelope_bold_compare(self, node_id=2, series_name='sa_series',
                                    low_f=10, high_f=50, low_pass=None,
@@ -836,9 +900,14 @@ class HRF:
         self.V_BOLD = np.ones((N,))
         # Blood volume
 
-    def create_task_design_activation(self, onsets, duration, first_rest=5, last_rest=5):
+    def create_task_design_activation(self,
+                                      onsets,
+                                      duration,
+                                      first_rest=5,
+                                      last_rest=5):
+        # TODO delete this function
         """
-        Create
+        Create external activation separately for each region
         Args:
             onsets (list of list of int or list): onset list for each region, for example [10, 12, 15], N lists
             duration (float or list of lists): duration of each task

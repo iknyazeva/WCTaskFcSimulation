@@ -413,30 +413,55 @@ class TestWCTaskSim(TestCase):
                      "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
         activity = True
 
-        wc_block = WCTaskSim.from_matlab_structure(mat_path, num_regions=N_ROIs,
-                                                   **wc_params, **sim_parameters)
-        wc_block.generate_full_series(TR=TR, activity=activity, a_s_rate=a_s_rate,
-                                      normalize_max=2, output_activation=act_type, **bw_params)
-        t_coactiv, coactiv, bold_coactiv = wc_block.generate_coactivations(mat_path, act_scaling=0.5, **bw_params)
-        assert True
+        wc_block = WCTaskSim.from_matlab_structure(mat_path,
+                                                   num_regions=N_ROIs,
+                                                   **wc_params,
+                                                   **sim_parameters)
+        wc_block.generate_full_series(TR=TR,
+                                      activity=activity,
+                                      a_s_rate=a_s_rate,
+                                      normalize_max=2,
+                                      output_activation=act_type,
+                                      **bw_params)
+        t_coactiv, coactiv, bold_coactiv = wc_block.generate_coactivation_by_mat(mat_path,
+                                                                                 act_scaling=0.5,
+                                                                                 **bw_params)
+        self.assertEqual(wc_block.BOLD.shape[0], N_ROIs)
+        self.assertEqual(wc_block.activity['sa_series'].shape[0], N_ROIs)
+        self.assertEqual(wc_block.BOLD.shape, bold_coactiv.shape)
 
-    def test_generate_simple_block_design(self, c_test):
-        C_task_dict, C_rest, D = c_test
+    def test_generate_simple_block_design(self):
         onset_time_list = [16, 54]
         duration_list = [24, 32]
         task_names_list = ["task_A", "task_B"]
-        wc_block = WCTaskSim(C_task_dict, C_rest, D, rest_before=False,
-                             onset_time_list=onset_time_list, duration_list=duration_list,
+        act_type = 'syn_act'
+
+        wc_block = WCTaskSim(self.Wij_task_dict,
+                             self.Wij_rest,
+                             self.D,
+                             rest_before=False,
+                             onset_time_list=onset_time_list,
+                             duration_list=duration_list,
                              task_name_list=task_names_list,
-                             last_duration=16, append_outputs=False, bold=True)
-        wc_block.generate_full_series()
-        assert True
+                             last_duration=16,
+                             append_outputs=False,
+                             bold=True)
+        wc_block.generate_full_series(bold_chunkwise=True,
+                                      TR=2,
+                                      activity=True,
+                                      a_s_rate=0.02,
+                                      normalize_max=2,
+                                      output_activation=act_type)
+        self.assertIsInstance(wc_block.BOLD, np.ndarray)
 
     def test_event_related(self):
         num_regions = 30
-        mat_path = '../data/SOTs.mat'
-        C_rest, C_task_dict = generate_sw_matrices_from_mat(mat_path, num_regions, num_modules=3,
-                                                            sigma=0.1, norm_type="cols")
+        mat_path = '../data/small_02_EVENT_[2_TR]_[1s_DUR]_[6s_ISI]_[100_TRIALS].mat'
+        C_rest, C_task_dict = generate_sw_matrices_from_mat(mat_path,
+                                                            num_regions,
+                                                            num_modules=3,
+                                                            sigma=0.1,
+                                                            norm_type="cols")
         D = np.ones((num_regions, num_regions)) * 250
         np.fill_diagonal(D, 0)
         onset_time_list, task_names_list, duration_list = read_onsets_from_mat(mat_path)
@@ -445,21 +470,23 @@ class TestWCTaskSim(TestCase):
         small_task_names_list = task_names_list[:6]
         small_duration_list = duration_list[:6]
 
-        wc_block = WCTaskSim(C_task_dict, C_rest, D, rest_before=False,
-                             onset_time_list=small_onset_time_list, duration_list=small_duration_list,
+        wc_block = WCTaskSim(C_task_dict,
+                             C_rest,
+                             D,
+                             rest_before=False,
+                             onset_time_list=small_onset_time_list,
+                             duration_list=small_duration_list,
                              task_name_list=small_task_names_list,
-                             last_duration=16, append_outputs=True, bold=False)
-        wc_block.generate_full_series()
-        assert True
+                             last_duration=16,
+                             append_outputs=False,
+                             bold=False)
+        wc_block.generate_full_series(bold_chunkwise=False,
+                                      activity=True,
+                                      a_s_rate=0.02,
+                                      normalize_max=2)
+        self.assertIsNone(wc_block.BOLD)
+        self.assertIsNotNone(wc_block.activity)
 
-    def test_init_from_matlab_structure(self):
-        num_regions = 30
-        mat_path = '../data/test_input.mat'
-        wc_block = WCTaskSim.from_matlab_structure(mat_path, num_regions=num_regions,
-                                                   rest_before=True, first_duration=6, last_duration=6)
-        wc_block.generate_full_series()
-        wc_block.generate_bold(TR=2, drop_first=6, clear_exc=True)
-        assert True
 
     def test_draw_envelope_bold_compare(self):
         sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 4, "last_duration": 4}
@@ -493,24 +520,38 @@ class TestWCTaskSim(TestCase):
         assert True
 
     def test_generate_local_activations(self):
-        sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 6, "last_duration": 20}
+        sim_parameters = {"delay": 250,
+                          "rest_before": True,
+                          "first_duration": 6,
+                          "last_duration": 20}
         TR = 2
         N_ROIs = 30
         # mat_path = "../data/01_BLOCK_[2s_TR]_[20s_DUR]_[10_BLOCKS]_MATRIXv29.mat"
         mat_path = '../data/small_01_BLOCK.mat'
         bw_params = {"rho": 0.34, "alpha": 0.32, "V0": 0.02, "k1_mul": None,
                      "k2": None, "k3_mul": None, "gamma": None, "k": None, "tau": None}
-        wc_block = WCTaskSim.from_matlab_structure(mat_path, num_regions=N_ROIs, **sim_parameters)
-        wc_block.TR = 2
-        t_coactiv, coactiv, bold_coactiv = wc_block.generate_coactivations(mat_path, act_scaling=0.5, **bw_params)
+        wc_block = WCTaskSim.from_matlab_structure(mat_path,
+                                                   num_regions=N_ROIs,
+                                                   **sim_parameters)
+        wc_block.TR = TR
+        t_coactiv, coactiv, bold_coactiv = wc_block.generate_coactivations(mat_path,
+                                                                           act_scaling=0.5,
+                                                                           **bw_params)
+        t_coactiv1, coactiv1, bold_coactiv1 = wc_block.generate_coactivation_by_mat(mat_path,
+                                                                                    act_scaling=0.5,
+                                                                                    **bw_params)
 
-        assert True
+        self.assertTrue(all(coactiv1==coactiv))
+        self.assertTrue(all(bold_coactiv1 == bold_coactiv))
 
 
 class TestHRF:
 
     def test_init(self):
-        hrf = HRF(2, dt=10, TR=0.01, normalize_input=True,
+        hrf = HRF(2,
+                  dt=10,
+                  TR=0.01,
+                  normalize_input=True,
                   normalize_max=2)
         assert type(hrf.BOLD) == np.ndarray
         assert hrf.BOLD.shape == (1, 0)

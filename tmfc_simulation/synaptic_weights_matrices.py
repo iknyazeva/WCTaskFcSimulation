@@ -4,13 +4,14 @@ import numpy.typing as npt
 
 
 def generate_synaptic_weights_matrices(
-        num_regions: int, num_modules: int,
+        num_regions: int,
+        num_modules: int,
         num_regions_per_modules: Optional[list] = None,
         factors: Optional[npt.NDArray] = None,
         sigma: float = 0.01,
         return_stats: bool = False,
         gen_type: str =
-        'simple_prod') -> Union[npt.NDArray, list[npt.NDArray, dict]]:
+        'equal_var') -> Union[npt.NDArray, list[npt.NDArray, dict]]:
     """Function for synaptic weight matrix generation with different
     module structure. Construction of the synaptic weight matrices
     involved tцщ steps.
@@ -52,6 +53,9 @@ def generate_synaptic_weights_matrices(
         num_regions_per_modules = (
                 (num_modules - 1) * [num_equal]
                 + [num_regions - (num_modules - 1) * num_equal])
+    else:
+        assert np.sum(num_regions_per_modules)==num_regions, \
+            "Number regions per module in sum should be equal to total number of regions"
     module_borders = [0] + list(np.cumsum(num_regions_per_modules))
     if factors is None:
         factors = np.array([[0.8, 0.1, 0.1],
