@@ -1,4 +1,5 @@
 from unittest import TestCase
+from tmfc_simulation import functions
 from tmfc_simulation.wilson_cowan_task_simulation import WCTaskSim, HRF
 from tmfc_simulation.synaptic_weights_matrices import normalize, generate_synaptic_weights_matrices
 from tmfc_simulation.read_utils import read_onsets_from_mat, generate_sw_matrices_from_mat
@@ -270,8 +271,8 @@ class TestWCTaskSim(TestCase):
                                          is_first=False)
         bold_exc2 = wc_block.BOLD[0, :]
 
-        self.assertEqual(len(bold_exc1), int(duration_rest/TR))
-        self.assertEqual(len(bold_exc2), len(bold_exc1)+int(duration_block/TR))
+        self.assertEqual(len(bold_exc1), int(duration_rest / TR))
+        self.assertEqual(len(bold_exc2), len(bold_exc1) + int(duration_block / TR))
 
     def test_generate_full_series_one_task_bold_chunkwise(self):
         act_type = 'syn_act'
@@ -380,9 +381,12 @@ class TestWCTaskSim(TestCase):
                                                 drop_first=6,
                                                 normalize_max=0.02,
                                                 conv_type='Gamma')
-        plt.subplot(311); plt.plot(wc_block.t_BOLD[7:], wc_block.BOLD[0, 7:])
-        plt.subplot(312); plt.plot(t_BOLD, BOLD_bw[0, :])
-        plt.subplot(313); plt.plot(t_BOLD, BOLD_g[0, :])
+        plt.subplot(311);
+        plt.plot(wc_block.t_BOLD[7:], wc_block.BOLD[0, 7:])
+        plt.subplot(312);
+        plt.plot(t_BOLD, BOLD_bw[0, :])
+        plt.subplot(313);
+        plt.plot(t_BOLD, BOLD_g[0, :])
         plt.show()
 
     def test_full_series_from_mat(self):
@@ -487,6 +491,35 @@ class TestWCTaskSim(TestCase):
         self.assertIsNone(wc_block.BOLD)
         self.assertIsNotNone(wc_block.activity)
 
+    def test_compute_power_spectrum(self):
+        onset_time_list = [1]
+        duration_list = 2
+        task_names_list = ["task_A"]
+        act_type = 'syn_act'
+
+        wc_block = WCTaskSim(self.Wij_task_dict,
+                             self.Wij_rest,
+                             self.D,
+                             rest_before=True,
+                             first_duration=6,
+                             onset_time_list=onset_time_list,
+                             duration_list=duration_list,
+                             task_name_list=task_names_list,
+                             last_duration=6,
+                             append_outputs=False)
+        wc_block.generate_full_series(bold_chunkwise=True,
+                                      TR=2,
+                                      activity=False,
+                                      a_s_rate=0.02,
+                                      clear_raw=False,
+                                      normalize_max=2,
+                                      output_activation=act_type)
+        syn_act_oscill = wc_block.generate_neuronal_oscill()
+        maxfr = 100
+        windowsize = 2;
+        f1, Pxx_Welsh1 = functions.getMeanPowerSpectrum(syn_act_oscill, 0.1, spectrum_windowsize=windowsize, maxfr=maxfr)
+        self.assertEqual(len(f1), len(Pxx_Welsh1))
+
 
     def test_draw_envelope_bold_compare(self):
         sim_parameters = {"delay": 250, "rest_before": True, "first_duration": 4, "last_duration": 4}
@@ -541,7 +574,7 @@ class TestWCTaskSim(TestCase):
                                                                                     act_scaling=0.5,
                                                                                     **bw_params)
 
-        self.assertTrue(all(coactiv1==coactiv))
+        self.assertTrue(all(coactiv1 == coactiv))
         self.assertTrue(all(bold_coactiv1 == bold_coactiv))
 
 
